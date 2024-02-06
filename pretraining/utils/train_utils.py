@@ -9,9 +9,9 @@ try:
 except ImportError:
     from pkg_resources import packaging
 
-from pretraining.policies import *
-
 from torch.distributed.fsdp import ShardingStrategy
+
+from pretraining.policies import *
 
 
 def train(

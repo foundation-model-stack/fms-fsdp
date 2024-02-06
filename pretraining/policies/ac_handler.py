@@ -2,9 +2,9 @@ from functools import partial
 
 from fms.models.llama import LLaMABlock
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-    checkpoint_wrapper,
     CheckpointImpl,
     apply_activation_checkpointing,
+    checkpoint_wrapper,
 )
 
 non_reentrant_wrapper = partial(
