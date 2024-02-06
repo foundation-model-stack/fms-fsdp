@@ -15,7 +15,7 @@ MODEL_ARGS="\
 --low_cpu_fsdp=False
 --batch_size=2
 --report_interval=200
---checkpoint_interval=400
+--checkpoint_interval=20000
 --use_torch_compile=False
 --use_profiler=False
 "
