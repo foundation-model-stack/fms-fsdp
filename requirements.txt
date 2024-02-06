@@ -1,0 +1,4 @@
+torch>=2.1.0
+fire
+pyarrow
+transformers
