@@ -8,4 +8,4 @@
 #SBATCH --exclusive
 ##SBATCH --contiguous
 
-srun train.sh
+srun ./scripts/train.sh
