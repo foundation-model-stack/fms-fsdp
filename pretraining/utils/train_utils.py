@@ -1,13 +1,12 @@
 import os
+try:
+    import packaging.version
+except ImportError:
+    from pkg_resources import packaging  # type: ignore
 import time
 
 import torch.cuda.nccl as nccl
 import torch.distributed as dist
-
-try:
-    import packaging.version
-except ImportError:
-    from pkg_resources import packaging
 
 from torch.distributed.fsdp import ShardingStrategy
 
