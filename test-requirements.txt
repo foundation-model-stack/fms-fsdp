@@ -12,6 +12,3 @@ mypy-extensions==1.0.0
 pyarrow-stubs==10.0.1.7
 types-requests==2.31.0.20240125
 types-setuptools==69.0.0.20240125
-
-# Install ibm-fms from the main branch for testing purposes
-ibm-fms @ git+https://github.com/foundation-model-stack/foundation-model-stack@main
