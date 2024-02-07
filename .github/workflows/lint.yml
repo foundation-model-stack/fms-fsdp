@@ -1,0 +1,21 @@
+name: Lint
+
+on: [pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: psf/black@stable
+        with:
+          options: "--check --diff --color"
+          src: "."
+          version: "~= 23.3.0"
+      - uses: isort/isort-action@master
+        with:
+          sort-paths: pretraining
+          requirementsFiles: "requirements.txt" # We don't need extra test requirements for linting
