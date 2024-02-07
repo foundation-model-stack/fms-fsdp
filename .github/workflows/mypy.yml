@@ -42,9 +42,13 @@ jobs:
         echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
         echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
         
-    - name: Test with pytest
+    - name: Test with mypy
       run: |
-        mypy pretraining
+        # Install ibm-fms from the main branch for testing purposes
+        pip install ibm-fms@git+https://github.com/foundation-model-stack/foundation-model-stack@main
+
+        # No type stubs available for "fire" and "transformers"
+        mypy --exclude fms_to_hf.py --exclude main_training.py .
 
     - name: Save Virtualenv
       id: cache-venv-save
