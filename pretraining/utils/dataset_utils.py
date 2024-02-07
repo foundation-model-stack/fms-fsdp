@@ -4,15 +4,7 @@ import math
 import os
 import random
 import sys
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Type,
-    Union,
-)
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import pyarrow as pa
 import torch

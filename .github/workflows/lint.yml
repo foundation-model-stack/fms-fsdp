@@ -17,5 +17,5 @@ jobs:
           version: "~= 23.3.0"
       - uses: isort/isort-action@master
         with:
-          sort-paths: pretraining
+          sort-paths: .
           requirementsFiles: "requirements.txt" # We don't need extra test requirements for linting
