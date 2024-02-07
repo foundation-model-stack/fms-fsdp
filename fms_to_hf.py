@@ -24,9 +24,9 @@ def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
                 int(hf_config.hidden_size * hf_config.hidden_grow_factor)
                 / hf_config.multiple_of
             ),
-            pad_token_id=None
-            if hf_config.pad_token_id == -1
-            else hf_config.pad_token_id,
+            pad_token_id=(
+                None if hf_config.pad_token_id == -1 else hf_config.pad_token_id
+            ),
             bos_token_id=hf_config.bos_token_id,
             eos_token_id=hf_config.eos_token_id,
             max_position_embeddings=hf_config.max_expected_seq_len,
