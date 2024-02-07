@@ -3,7 +3,7 @@ import logging
 import math
 import os
 import random
-from typing import Any, Callable, List, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable, Type, Union
 
 import pyarrow as pa
 import torch
@@ -45,8 +45,8 @@ class _Stateful_Dataset(data.IterableDataset):
         assert (
             worldsize > rank
         ), f"Worldsize {worldsize} must be greater than rank {rank}"
-        self.state_params = []
-        self.reshard_params = []
+        self.state_params: List[str] = []
+        self.reshard_params: List[str] = []
         self.rank = rank
         self.worldsize = worldsize
         self.load_worldsize = (
@@ -261,11 +261,11 @@ class Preload_Buffer_Dataset(_Wrapper_Dataset):
         super().__init__(dataset)
         assert (
             window_size > 1
-        ), f"Window size {f} must be greater than 1 for shuffling to occur"
+        ), f"Window size {window_size} must be greater than 1 for shuffling to occur"
         self.window_size = window_size
         self.g_state = None
         self.generator = torch.Generator().manual_seed(self.rank)
-        self.buffer = []
+        self.buffer: List[str] = []
         self.state_params = ["g_state"]
         self.reshard_params = ["buffer"]
 
@@ -423,8 +423,8 @@ class Buffer_Dataset(_Wrapper_Dataset):
         dataset: _Stateful_Dataset,
         task_seq_lens: List[int],
         pack_hard: bool,
-        task_tokens: List = None,
-        task_weights: List[Union[int, float]] = None,
+        task_tokens: Optional[List] = None,
+        task_weights: Optional[List[Union[int, float]]] = None,
         bos_token=None,
         eos_token=None,
         pad_token=None,
@@ -453,7 +453,7 @@ class Buffer_Dataset(_Wrapper_Dataset):
         self.choice = list(range(n_tasks))
 
         # Buffer args
-        self.buffer = []
+        self.buffer: List[str] = []
         self.bos = bos_token
         self.eos = eos_token
         self.pad = pad_token
@@ -576,8 +576,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         delimiter_token: Any,
         trainsplit: float = 1,
         is_val: bool = False,
-        datasets: List[str] = None,
-        weights: List[int] = None,
+        datasets: Optional[List[str]] = None,
+        weights: Optional[List[int]] = None,
         seed: int = 42,
         min_length: int = 1,
         testrun_data_index: int = -100,
@@ -667,7 +667,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             # Read shardfrags:
             last_shard = ""
             ndocs = -1
-            shardset = []
+            shardset: List[Any] = []
             for i, (shard, frag) in enumerate(shardfrags):
                 # On new shard, wrap up shardset
                 if shard != last_shard:
@@ -728,7 +728,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.dataset_tokens_seen = {d: 0 for d in self.datasets}
         self.dataset_docs_seen = {d: 0 for d in self.datasets}
         self.dataset_percent_seen = {d: 0 for d in self.datasets}
-        self.docs_seen = {}  # (dataset, shard, i) -> # times seen
+        self.docs_seen: Dict[Any, int] = {}  # (dataset, shard, i) -> # times seen
 
         self.state_params = [
             "docset_index",
@@ -820,6 +820,13 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         ), "Streaming_Doc_Dataset does not support rescaling"
         return super().load_state_dict(state_dicts, sharded_input)
 
+@runtime_checkable
+class _With_Datasets(Protocol):
+    datasets: List[Any]
+
+@runtime_checkable
+class _With_Docset(Protocol):
+    docset: List[Any]
 
 class Sampling_Dataset(_Stateful_Dataset):
     """
@@ -908,7 +915,10 @@ class Sampling_Dataset(_Stateful_Dataset):
         # Build subdataset iterators
         self.data = []
         for i, d in enumerate(self.datasets):
-            self.data.append(dataset(**passthrough_args, datasets=[d]))
+            stateful_dataset = dataset(**passthrough_args)
+            if isinstance(stateful_dataset, _With_Datasets):
+                stateful_dataset.datasets = [d]
+            self.data.append(stateful_dataset)
             if verbose:
                 logging.info(
                     f"Worker {rank} assembled subdataset iterator for {d}, {i+1} of {len(self.datasets)}"
@@ -1106,7 +1116,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
 
         super().__init__(rank, worldsize)
         self.data = []
-        self.docset = []
+        self.docset: List[Any] = []
         self.n_logicals = n_logical_shards // worldsize
         self.total_shards = n_logical_shards
         self.delimiter = delimiter_token
@@ -1147,7 +1157,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
                 )
 
         # Fetch logical shard sampling stats
-        self.n_docs_remaining = [len(d.docset) for d in self.data]
+        self.n_docs_remaining = [len(d.docset) if isinstance(d, _With_Docset) else 0 for d in self.data]
 
         # Position "state", used only for maintaining order when n_workers is unchanged
         # For scaling up or down, logical position is meaningless, and reset
@@ -1260,8 +1270,8 @@ class Shard_Doc_Dataset(_Stateful_Dataset):
         delimiter_token: Any,
         trainsplit: float = 1,
         is_val: bool = False,
-        datasets: List[str] = None,
-        weights: List[int] = None,
+        datasets: Optional[List[str]] = None,
+        weights: Optional[List[int]] = None,
         seed: int = 42,
         min_length: int = 1,
         testrun_data_index: int = -100,
@@ -1317,8 +1327,6 @@ class Shard_Doc_Dataset(_Stateful_Dataset):
         for dataset in self.datasets:
             if verbose:
                 logging.info(f"Worker {rank} fetching dataset {dataset}")
-            docset = []
-            docset_slim = {}
 
             # Listdir, assemble shardfraglist (ind -> shard, frag)
             shards = [
@@ -1337,8 +1345,9 @@ class Shard_Doc_Dataset(_Stateful_Dataset):
 
             # Read shardfrags:
             last_shard = ""
-            docset_slim = {}
+            docset_slim: Dict[Any, Any] = {}
             reader = None
+            shard_file = None
             if verbose:
                 logging.info(
                     f"    Worker {rank} ingesting {len(shardfrags)} shard fragments"
@@ -1350,18 +1359,26 @@ class Shard_Doc_Dataset(_Stateful_Dataset):
                     )
                 # Grab new reader if new
                 if shard != last_shard:
+                    # Close previous file
+                    if shard_file is not None:
+                        shard_file.close()
                     path = os.path.join(datapath, dataset, shard)
-                    reader = pa.ipc.open_file(path)
+                    shard_file = open(path) # Closed below
+                    reader = pa.ipc.open_file(shard_file)
                     last_shard = shard
                     shardcount += 1
-                ndocs = reader.num_record_batches
-                doc_start = (ndocs * frag) // worldsize
-                doc_end = (ndocs * frag + ndocs) // worldsize
-                # Read into temp docset_slim
-                for i in range(doc_start, doc_end):
-                    doc = reader.get_batch(i)["tokens"]  # .to_pylist()
-                    docset_slim[(dataset, shardcount, i)] = doc
-            del reader
+                if reader is not None:
+                    ndocs = reader.num_record_batches
+                    doc_start = (ndocs * frag) // worldsize
+                    doc_end = (ndocs * frag + ndocs) // worldsize
+                    # Read into temp docset_slim
+                    for i in range(doc_start, doc_end):
+                        doc = reader.get_batch(i)["tokens"]  # .to_pylist()
+                        docset_slim[(dataset, shardcount, i)] = doc
+            if reader is not None:
+                del reader
+            if shard_file is not None:
+                shard_file.close()
 
             # Shuffle, partition docs into train/val
             keylist = list(docset_slim.keys())
@@ -1399,7 +1416,7 @@ class Shard_Doc_Dataset(_Stateful_Dataset):
         self.dataset_tokens_seen = {d: 0 for d in self.datasets}
         self.dataset_docs_seen = {d: 0 for d in self.datasets}
         self.dataset_percent_seen = {d: 0 for d in self.datasets}
-        self.docs_seen = {}  # (dataset, shard, i) -> # times seen
+        self.docs_seen: Dict[Any, int] = {}  # (dataset, shard, i) -> # times seen
 
         self.state_params = [
             "docset_index",

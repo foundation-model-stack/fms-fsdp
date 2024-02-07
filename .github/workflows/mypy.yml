@@ -44,7 +44,8 @@ jobs:
         
     - name: Test with pytest
       run: |
-        mypy pretraining
+        # No type stubs available for "fire" and "transformers"
+        mypy --exclude fms_to_hf.py --exclude main_training.py .
 
     - name: Save Virtualenv
       id: cache-venv-save

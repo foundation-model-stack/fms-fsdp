@@ -1,13 +1,9 @@
 import os
+from packaging import version
 import time
 
 import torch.cuda.nccl as nccl
 import torch.distributed as dist
-
-try:
-    import packaging.version
-except ImportError:
-    from pkg_resources import packaging
 
 from torch.distributed.fsdp import ShardingStrategy
 
@@ -115,7 +111,7 @@ def get_policies(cfg, rank):
     verify_bfloat_support = (
         torch.version.cuda
         and torch.cuda.is_bf16_supported()
-        and packaging.version.parse(torch.version.cuda).release >= (11, 0)
+        and version.parse(torch.version.cuda).release >= (11, 0)
         and dist.is_nccl_available()
         and nccl.version() >= (2, 10)
     )
