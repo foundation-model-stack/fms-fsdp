@@ -28,7 +28,7 @@ def train(
     n_tok,
 ):
     model.train()
-    ddp_loss = torch.zeros(2).to(local_rank)
+    ddp_stats = torch.zeros(3).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -44,18 +44,20 @@ def train(
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
         loss.backward()
+        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 
-        ddp_loss[0] += loss.item()
-        ddp_loss[1] += 1
+        ddp_stats[0] += loss.item()
+        ddp_stats[2] += 1
 
         if profiler:
             profiler.step()
 
         if batch_idx % cfg.report_interval == 0:
-            dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-            train_loss = ddp_loss[0] / ddp_loss[1]
+            dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
+            train_loss = ddp_stats[0] / ddp_stats[2]
+            g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             elapsed_tokens = (
@@ -65,6 +67,7 @@ def train(
                 print("step:", batch_idx)
                 print("tokens seen:", n_tok + elapsed_tokens)
                 print("loss:", train_loss.item())
+                print("gradient norm:", g_norm.item())
                 print(
                     f"speed for these {cfg.report_interval} steps:",
                     (time.time() - start) / cfg.report_interval,
@@ -85,7 +88,7 @@ def train(
                 )
                 print("token per day:", int(elapsed_tokens / elapsed_time * 3600 * 24))
             start = time.time()
-            ddp_loss.zero_()
+            ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if batch_idx % cfg.checkpoint_interval == 0:
