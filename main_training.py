@@ -13,7 +13,6 @@ from pretraining import config, policies
 from pretraining.utils.checkpointing_utils import Checkpointer
 from pretraining.utils.config_utils import get_model_config, update_config
 from pretraining.utils.dataloader_utils import get_data_loader, get_dummy_loader
-from pretraining.utils.model_utils import post_init_original
 from pretraining.utils.train_utils import (
     get_policies,
     get_profiler,
@@ -59,8 +58,6 @@ def main(**kwargs):
             model = LLaMA(llama_config)
     else:
         model = LLaMA(llama_config)
-        
-    model = post_init_original(model)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
