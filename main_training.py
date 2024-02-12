@@ -83,11 +83,11 @@ def main(**kwargs):
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         sync_module_states=cfg.low_cpu_fsdp,
-        param_init_fn=lambda module: module.to_empty(
-            device=torch.device("cuda"), recurse=False
-        )
-        if cfg.low_cpu_fsdp
-        else None,
+        param_init_fn=lambda module: (
+            module.to_empty(device=torch.device("cuda"), recurse=False)
+            if cfg.low_cpu_fsdp
+            else None
+        ),
     )
 
     # fsdp activation checkpointing
