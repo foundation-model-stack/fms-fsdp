@@ -125,6 +125,10 @@ def main(**kwargs):
         path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
     )
 
+    if start_step==0:
+        print("Starting from scratch - initializing parameters")
+        model.reset_parameters()
+
     # LR schedule
     warmup_interval = min(2000, cfg.num_steps // 20)
     schedule = lambda x: min(
