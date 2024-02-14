@@ -125,7 +125,7 @@ def main(**kwargs):
         path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
     )
 
-    if start_step==0:
+    if start_step == 0:
         print("Starting from scratch - initializing parameters")
         model.reset_parameters()
 
