@@ -5,7 +5,7 @@ from fms.models.llama import LLaMA
 from torch.distributed._shard.checkpoint import FileSystemReader, load_state_dict
 from transformers import LlamaConfig, LlamaForCausalLM
 
-from pretraining.utils.config_utils import get_model_config
+from fms_fsdp.utils.config_utils import get_model_config
 
 
 def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:

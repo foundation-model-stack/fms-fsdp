@@ -1,6 +1,6 @@
 from fms.models.llama import LLaMAConfig
 
-from pretraining.config import train_config
+from fms_fsdp.config import train_config
 
 
 def update_config(config, **kwargs):
