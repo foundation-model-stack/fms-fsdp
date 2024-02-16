@@ -3,15 +3,12 @@ from dataclasses import dataclass
 
 @dataclass
 class train_config:
-    # seed
-    seed: int = 2023
-
     # model
     model_variant: str = "7b"
     ckpt_load_path: str = "/lustre/pretrain/ckpt"
     ckpt_save_path: str = "/lustre/pretrain/ckpt"
 
-    # data and dataloader
+    # dataset and dataloader
     use_dummy_dataset: bool = False
     data_path: str = "/lustre/data"
     seq_length: int = 4096
@@ -20,26 +17,24 @@ class train_config:
     weights: str = "7700,500,550,28,17,22,25,8,100,500,175,250,100,25"
     logical_shards: int = 768
 
-    # compile
-    use_torch_compile: bool = False
-
-    # profiler
-    use_profiler: bool = False
-
     # fsdp policies
     mixed_precision: bool = True
     fsdp_activation_checkpointing: bool = False
     selective_checkpointing: int = 1
     sharding_strategy: str = "hsdp"
-    sharding_group_size: int = 8
     low_cpu_fsdp: bool = False
 
     # training spec
+    seed: int = 2023
     batch_size: int = 2
     num_steps: int = 2000000
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
 
-    # reporting
+    # profiling and reporting
+    use_profiler: bool = False
     report_interval: int = 200
     checkpoint_interval: int = 20000
+
+    # compile
+    use_torch_compile: bool = False
