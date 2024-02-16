@@ -12,7 +12,7 @@ import torch.cuda.nccl as nccl
 import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
-from pretraining.policies import *
+from fms_fsdp.policies import *
 
 
 def train(
