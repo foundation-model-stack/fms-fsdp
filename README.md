@@ -24,7 +24,7 @@ Below assumes running with Slurm, but same can be easily adopted
 if running with OCP.
 
 1. modify Training Config in [scripts/train.sh](scripts/train.sh) (for the full
-list of training configs refer to [train config](pretraining/config/training.py)).
+list of training configs and best practices, refer to [Configuration Doc](docs/configurations.md)).
 2. modify Run Config in [scripts/train.slurm](scripts/train.slurm)
 
 ### Run
