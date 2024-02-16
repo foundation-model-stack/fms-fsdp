@@ -45,7 +45,9 @@ jobs:
     - name: Test with mypy
       run: |
         # Install ibm-fms from the main branch for testing purposes
-        pip install ibm-fms@git+https://github.com/foundation-model-stack/foundation-model-stack@main
+        # Use -I to ignore the existing install and actually install
+        # the version on main
+        pip install -I ibm-fms@git+https://github.com/foundation-model-stack/foundation-model-stack@main
 
         # No type stubs available for "fire" and "transformers"
         mypy --exclude fms_to_hf.py --exclude main_training.py .
