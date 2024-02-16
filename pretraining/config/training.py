@@ -38,6 +38,7 @@ class train_config:
     batch_size: int = 2
     num_steps: int = 2000000
     learning_rate: float = 3e-4
+    grad_clip_thresh: float = 1.0
 
     # reporting
     report_interval: int = 200
