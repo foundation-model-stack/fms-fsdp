@@ -3,7 +3,6 @@ from dataclasses import dataclass
 
 @dataclass
 class train_config:
-
     # model
     model_variant: str = "7b"
     ckpt_load_path: str = "/lustre/pretrain/ckpt"
