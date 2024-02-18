@@ -3,7 +3,6 @@ import logging
 import math
 import os
 import random
-import sys
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import pyarrow as pa
@@ -844,7 +843,7 @@ class Sampling_Dataset(_Stateful_Dataset):
         datapath: str,
         dataset: Union[
             Type[Streaming_Doc_Dataset],
-            Type[Scalable_Shard_Dataset],
+            Type["Scalable_Shard_Dataset"],
         ],
         rank: int,
         worldsize: int,
@@ -1087,7 +1086,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
         datapath: str,
         dataset: Union[
             Type[Streaming_Doc_Dataset],
-            Type[Scalable_Shard_Dataset],
+            Type["Scalable_Shard_Dataset"],
         ],
         rank: int,
         worldsize: int,
