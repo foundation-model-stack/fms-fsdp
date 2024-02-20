@@ -7,6 +7,7 @@ except ImportError:
     from pkg_resources import packaging  # type: ignore
 
 import time
+from datetime import timedelta
 
 import torch.cuda.nccl as nccl
 import torch.distributed as dist
@@ -105,7 +106,7 @@ def train(
 
 
 def setup():
-    dist.init_process_group("nccl")
+    dist.init_process_group("nccl", timeout=timedelta(seconds=60 * 60))
 
 
 def setup_environ_flags():
