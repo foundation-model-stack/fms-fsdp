@@ -7,7 +7,11 @@ decay of 0.1, and a learning rate ending at 3e-5 with a warmup to max learning r
 schedule to reduce to 3e-5 over 2T tokens. The loss curve tracks that of Llama2 paper and reaches a lower
 loss than Llama2 7B does, which we believe is the characteristic of the dataset.
 
-TODO: all the graphs: loss curve, etc. to be posted here
+### Loss Curve
+![](../images/blue_llama_loss_curve.png)
+
+### Learning Rate
+![](../images/blue_llama_lr.png)
 
 ## Lesson learned
 
