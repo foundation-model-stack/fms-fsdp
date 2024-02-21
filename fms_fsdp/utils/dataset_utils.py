@@ -872,7 +872,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
 
         super().__init__(rank, worldsize)
         self.data = []
-        self.docset List[Any] = []
+        self.docset: List[Any] = []
         self.n_logicals = n_logical_shards // worldsize
         self.total_shards = n_logical_shards
         self.delimiter = delimiter_token
