@@ -50,7 +50,7 @@ jobs:
         pip install -I ibm-fms@git+https://github.com/foundation-model-stack/foundation-model-stack@main
 
         # No type stubs available for "fire" and "transformers"
-        mypy --exclude fms_to_hf.py --exclude main_training.py .
+        mypy --exclude fms_to_hf.py --exclude main_training.py --exclude setup.py .
 
     - name: Save Virtualenv
       id: cache-venv-save

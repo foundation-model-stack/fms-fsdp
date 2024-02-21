@@ -9,11 +9,11 @@ from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
 
-from pretraining import config, policies
-from pretraining.utils.checkpointing_utils import Checkpointer
-from pretraining.utils.config_utils import get_model_config, update_config
-from pretraining.utils.dataloader_utils import get_data_loader, get_dummy_loader
-from pretraining.utils.train_utils import (
+from fms_fsdp import config, policies
+from fms_fsdp.utils.checkpointing_utils import Checkpointer
+from fms_fsdp.utils.config_utils import get_model_config, update_config
+from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
+from fms_fsdp.utils.train_utils import (
     get_policies,
     get_profiler,
     setup,
@@ -55,9 +55,9 @@ def main(**kwargs):
 
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):
-            model = LLaMA(llama_config, orig_init=True)
+            model = LLaMA(llama_config)
     else:
-        model = LLaMA(llama_config, orig_init=True)
+        model = LLaMA(llama_config)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -124,6 +124,10 @@ def main(**kwargs):
         train_loader,
         path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
     )
+
+    if start_step == 0:
+        print("Starting from scratch - initializing parameters")
+        model.reset_parameters()
 
     # LR schedule
     warmup_interval = min(2000, cfg.num_steps // 20)

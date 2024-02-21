@@ -1,6 +1,6 @@
 from fms.models.llama import LLaMAConfig
 
-from pretraining.config import train_config
+from fms_fsdp.config import train_config
 
 
 def update_config(config, **kwargs):
@@ -72,6 +72,6 @@ def get_model_config(model_variant):
             max_expected_seq_len=2048,
         )
     else:
-        raise ValueError(f"model variant {cfg.model_variant} not supported.")
+        raise ValueError(f"model variant {model_variant} not supported.")
 
     return llama_config
