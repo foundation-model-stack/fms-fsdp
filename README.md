@@ -5,12 +5,12 @@ The goal of this repo is to provide a (pre)training example which could efficien
 FMS models (specifically, our FMS implementation of Llama) by leveraging PyTorch
 FSDP.
 
-| Model Size | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> (128 GPUs) | Example Script        | Profile Trace                                                        |   |   |   |
-|------------|-------------------|--------------------------|------------|--------------------------------------|-----------------------|----------------------------------------------------------------------|---|---|---|
-| 7b         | HSDP              | False                    | 2          | 3760 token/gpu/sec                   | [7b](scripts/7b.sh)   | [7b trace](https://ibm.box.com/s/ohaliqku0rl52jc9dhw1cb04opgssgy3)   |   |   |   |
-| 13b        | HSDP              | False                    | 1          | 1700 token/gpu/sec                   | [13b](scripts/13b.sh) | [13b trace](https://ibm.box.com/s/2j0uib7m1p5wqjhv9dagq4331n62iyv6)  |   |   |   |
-| 34b        | FSDP              | True                     |            |                                      | [34b](scripts/34b.sh) | [34b trace]()                                                        |   |   |   |
-| 70b        | FSDP              | True                     | 6          | 338 token/gpu/sec                    | [70b](scripts/70b.sh) | [70b trace](https://ibm.box.com/s/16759aydlaeygeadukzfzv0sdzl47k89)  |   |   |   |
+| Model Size | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> (128 GPUs) | Example Script        | Profile Trace                                                         | 
+|------------|-------------------|--------------------------|------------|--------------------------------------|-----------------------|-----------------------------------------------------------------------|
+| 7b         | HSDP              | False                    | 2          | 3760 token/gpu/sec                   | [7b](scripts/7b.sh)   | [7b trace](https://ibm.box.com/s/ohaliqku0rl52jc9dhw1cb04opgssgy3)    |
+| 13b        | HSDP              | False                    | 1          | 1700 token/gpu/sec                   | [13b](scripts/13b.sh) | [13b trace](https://ibm.box.com/s/2j0uib7m1p5wqjhv9dagq4331n62iyv6)   |
+| 34b        | FSDP              | True                     | 8          | 772 token/gpu/sec                    | [34b](scripts/34b.sh) | [34b trace](https://ibm.box.com/s/tf7x6254egzgzrn6ceh6kgdgy0rbowz6)   |  
+| 70b        | FSDP              | True                     | 6          | 380 token/gpu/sec                    | [70b](scripts/70b.sh) | [70b trace](https://ibm.box.com/s/5o1ohr1144nloqjrelsvunrq0rutyynu)   |
 
 
 ## Installation
