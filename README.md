@@ -32,10 +32,10 @@ We use an internally curated dataset, Blue Pile for training the model. We use s
 
 For this dataset, we designed a large-scale workload dataloader, details can be found [here](docs/dataloader.md).
 
-### Configuration
+### Train Config
 
 Below assumes running with Slurm, but same can be easily adopted
-if running with OCP.
+if running with other clusters.
 
 1. modify Training Config in [scripts/train.sh](scripts/train.sh) (for the full
 list of training configs and best practices, refer to [Configuration Doc](docs/configurations.md)).
@@ -46,6 +46,10 @@ list of training configs and best practices, refer to [Configuration Doc](docs/c
 sbatch ./scripts/train.slurm
 ```
 For other cluster setup, we can simply use the *torchrun* commands inside `train.sh`.
+
+### Training Details and Lessons learnt
+Details on training stability, loss curve, LR curve, etc., as well as what
+we have learnt from this journey can be found in [Training Details](docs/train_details.md).
 
 ## Post Training
 
@@ -62,5 +66,17 @@ python fms_to_hf.py --model_variant 7b --load_path /path/to/trained/checkpoints 
 > here so it can be copied over to the save dir. Just download the HF Llama tokenizer
 > and pass the path here.
 
+## Fine tuning
 
+In past, we have observed that while some models give competitive performance for in-context learning
+tasks, they are hard to fine tune on a general task. To validate that the stack produces a model which is as
+easy to fine-tune as Llama models, we convert the FSDP checkpoint into a HF checkpoint and fine tune it
+using popular fine-tuning configurations and data mixes.
+Specifically, we follow Allen AI’s [open-instruct](https://github.com/allenai/open-instruct) framework, leveraging the TULU v2 stack as-is
+(DeepSpeed, TULU v2 mixture and recommended configuration for Llama 2 models). The tuned model
+scores are presented below and we note improvements in several tasks. We did not do a hyperparameter
+exploration for the best parameters to fine-tune Blue Llama. We note that optimal hyperparameter for
+Blue Llama tuning could be different from Llama 2 as they are likely to have followed different learning
+rate schedules (Llama 2 learning rate schedule was not published).
 
+TODO: maybe we should add the fine-tuning perf table in a separate README.
