@@ -545,7 +545,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             last_shard = ""
             ndocs = -1
             # Shardset holds all docs in this shard file section as (dataset, shardfile index, doc index)
-            shardset: List[any] = []
+            shardset: List[Any] = []
             for i, (shard, frag) in enumerate(shardfrags):
                 # On new shard, wrap up shardset
                 if shard != last_shard:
