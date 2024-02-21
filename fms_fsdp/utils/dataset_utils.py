@@ -543,7 +543,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             # Read shardfrags, assemble doc list for each file shard (aggregating over fragments):
             last_shard = ""
             ndocs = -1
-            shardset = [] # all docs in this shard file section (dataset, shardfile index, doc index)
+            # Shardset holds all docs in this shard file section as (dataset, shardfile index, doc index)
+            shardset = []
             for i, (shard, frag) in enumerate(shardfrags):
                 # On new shard, wrap up shardset
                 if shard != last_shard:
@@ -637,7 +638,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         if j == n_chunks - 1:
             chunk = chunk + [
                 self.delimiter
-            ] # Add delimiter token to signify end of document (used upstream)
+            ]  # Add delimiter token to signify end of document (used upstream)
         return chunk
 
     def __iter__(self):
