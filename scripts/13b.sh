@@ -5,7 +5,7 @@ export LD_LIBRARY_PATH=/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/amazon/openm
 export FI_EFA_SET_CUDA_SYNC_MEMOPS=0
 
 MODEL_ARGS="\
---model_variant=7b
+--model_variant=13b
 --use_dummy_dataset=False
 --ckpt_load_path=/lustre/lchu/fms-fsdp/ckpt
 --ckpt_save_path=/lustre/lchu/fms-fsdp/ckpt
@@ -14,7 +14,7 @@ MODEL_ARGS="\
 --selective_checkpointing=1
 --sharding_strategy=hsdp
 --low_cpu_fsdp=False
---batch_size=2
+--batch_size=1
 --report_interval=200
 --checkpoint_interval=20000
 --use_torch_compile=False
