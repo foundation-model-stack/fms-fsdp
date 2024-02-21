@@ -31,13 +31,7 @@ the winter break. When we came back early January, disk space on LustreFS had ex
 checkpoints were failing to be written, although training job continued. The last known checkpoint was
 1.5T.
 
-**1.5T-1.7T:** We evaluated the 1.5T checkpoint with lm-eval harness and discovered that model has been
-trained with extra special token between two documents due to a formatting change that occurred
-between Blue Pile V0.6 and Blue Pile 0.7. We modified the dataloader to eliminate the extra special token,
-and continued training with the modified dataloader from 1.7T token onwards.
-
-**1.7T-2T:** The loss initially spiked due to the change in the special tokens which was quickly recovered in
-a few billion tokens. The training finished without any other manual intervention!!
+**1.5T-2.0T:** The training finished without any other manual intervention!!
 
 ### Speedups
 
