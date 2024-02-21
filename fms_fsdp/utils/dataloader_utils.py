@@ -15,6 +15,7 @@ def get_dummy_loader(cfg, rank, world_size):
     """
     A simple dummy dataloader yielding incrementing vocab indices in an infinite loop
     """
+
     class SteadyCounter(torch.utils.data.IterableDataset):
         # Spit out incremental counts of constant length l, modulo vocab size v
         def __init__(self, l, v):
@@ -51,7 +52,7 @@ def get_data_loader(cfg, rank, world_size):
     world_size : int
         Number of distributed workers. Used for handling dataset sharding logic.
     """
-    
+
     datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
 
     def causal_lm(data_seq, prompt_len=1):
