@@ -48,8 +48,7 @@ def get_model_config(model_variant):
             hidden_grow_factor=13824 / 5120,
         )
     elif model_variant == "7b":
-        llama_config = LLaMAConfig(
-        )
+        llama_config = LLaMAConfig()
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 
