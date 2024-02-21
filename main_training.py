@@ -54,10 +54,15 @@ def main(**kwargs):
     llama_config = get_model_config(cfg.model_variant)
 
     if cfg.low_cpu_fsdp:
-        with torch.device("meta"):
+        if rank == 0:
             model = LLaMA(llama_config)
+            model.reset_parameters()
+        else:
+            with torch.device("meta"):
+                model = LLaMA(llama_config)
     else:
         model = LLaMA(llama_config)
+        model.reset_parameters()
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -114,7 +119,6 @@ def main(**kwargs):
     )
 
     # optionally load from checkpoint (when continue pretraining)
-    start_step = 0
     checkpointer = Checkpointer(
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
     )
@@ -124,10 +128,6 @@ def main(**kwargs):
         train_loader,
         path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
     )
-
-    if start_step == 0:
-        print("Starting from scratch - initializing parameters")
-        model.reset_parameters()
 
     # LR schedule
     warmup_interval = min(2000, cfg.num_steps // 20)
