@@ -29,8 +29,8 @@ def get_dummy_loader(cfg, rank, world_size):
                 self.i += self.l
 
     data = SteadyCounter(
-        cfg.seq_length, 10000
-    )  # 10k vsize since vsize isn't actually in the cfg
+        cfg.seq_length, 32000
+    )  # hardcode 32k vocab size since vocab size isn't available in the cfg
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
