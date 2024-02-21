@@ -6,12 +6,12 @@ FMS models, in particular Llama2 by leveraging native PyTorch features - FSDP fo
 
 For an end-to-end framework, we would recommend the reader to [OLMo](https://github.com/allenai/OLMo) from AllenAI, which provides datasets, data preprocessing frameworks, leverages FSDP on AMD GPUs for training, and provides a tuning/alignment framework.
 
-| Model Size | Hardware    | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> (128 GPUs) | Example Script        | Profile Trace                                                         | 
-|------------|-------------|-------------------|--------------------------|------------|--------------------------------------|-----------------------|-----------------------------------------------------------------------|
-| 7b         | 128 * A100  | HSDP              | False                    | 2          | **3760 token/gpu/sec**               | [7b](scripts/7b.sh)   | [7b trace](https://ibm.box.com/s/ohaliqku0rl52jc9dhw1cb04opgssgy3)    |
-| 13b        | 128 * A100  | HSDP              | False                    | 1          | **1700 token/gpu/sec**               | [13b](scripts/13b.sh) | [13b trace](https://ibm.box.com/s/2j0uib7m1p5wqjhv9dagq4331n62iyv6)   |
-| 34b        | 128 * A100  | FSDP              | True                     | 8          | **772 token/gpu/sec**                | [34b](scripts/34b.sh) | [34b trace](https://ibm.box.com/s/tf7x6254egzgzrn6ceh6kgdgy0rbowz6)   |  
-| 70b        | 128 * A100  | FSDP              | True                     | 6          | **380 token/gpu/sec**                | [70b](scripts/70b.sh) | [70b trace](https://ibm.box.com/s/5o1ohr1144nloqjrelsvunrq0rutyynu)   |
+| Model Size | Hardware    | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> (128 GPUs) | Profile Trace                                                         | 
+|------------|-------------|-------------------|--------------------------|------------|--------------------------------------|-----------------------------------------------------------------------|
+| 7b         | 128 * A100  | HSDP              | False                    | 2          | **3760 token/gpu/sec**               | [7b trace](https://ibm.box.com/s/ohaliqku0rl52jc9dhw1cb04opgssgy3)    |
+| 13b        | 128 * A100  | HSDP              | False                    | 1          | **1700 token/gpu/sec**               | [13b trace](https://ibm.box.com/s/2j0uib7m1p5wqjhv9dagq4331n62iyv6)   |
+| 34b        | 128 * A100  | FSDP              | True                     | 8          | **772 token/gpu/sec**                | [34b trace](https://ibm.box.com/s/tf7x6254egzgzrn6ceh6kgdgy0rbowz6)   |  
+| 70b        | 128 * A100  | FSDP              | True                     | 6          | **380 token/gpu/sec**                | [70b trace](https://ibm.box.com/s/5o1ohr1144nloqjrelsvunrq0rutyynu)   |
 
 
 ## Installation
