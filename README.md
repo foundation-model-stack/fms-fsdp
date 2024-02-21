@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 ### Model
 We trained one model, a replica of Llama2 7B as an exemplar on IBM curated data, the [Blue Pile](https://mitibmwatsonailab.mit.edu/research/blog/creating-space-for-the-evolution-of-generative-and-trustworthy-ai/). This model was trained to 2.2T tokens with a 4k context length on 128 A100 GPUs for a total of 162k GPU hours, achieving an efficiency of 3500 tokens/sec/GPU (~38B tokens/day), which is roughly 20% faster than the Llama2 published training time. These speedups were possible by combining multiple techniques - SDPA Flash v2 implementation, FSDP with overlap in computation and communication, and selective activation checkpointing.
-The generated model has a good performance on various metrics as evaluated by [`lm-evaluation-harness`](https://github.com/EleutherAI/lm-evaluation-harness), with MMLU score of 0.5. We share further [scores](docs/evaluation.md) in the details of the model for completeness.
+The generated model has a good performance on various metrics as evaluated by [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness), with MMLU score of 0.5. We share further [scores](docs/evaluation.md) in the details of the model for completeness.
 
 ### Dataset
 We use an internally curated dataset, Blue Pile for training the model. We use sampling ratios similar to what Llama1 paper proposed with minor changes (e.g., no C4 dataset). Since the goal of this repo is to demonstrate the feasibility of training using PyTorch components at scale, we omit the details of the sampling ratios. The overall dataset is roughly 1.5T tokens and the model has seen all the tokens in the dataset at least once.
