@@ -49,7 +49,7 @@ def get_data_loader(cfg, rank, world_size):
     rank : int
         Rank of current distributed worker. Used for handling dataset sharding logic.
     world_size : int
-        Number of distributed workers. Used for handling dataset sharding logic. 
+        Number of distributed workers. Used for handling dataset sharding logic.
     """
     
     datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
@@ -65,7 +65,7 @@ def get_data_loader(cfg, rank, world_size):
         t[:prompt_len] = -100
         return data_seq, t
 
-    # Base streaming dataset. Returns doc chunks in sequence. 
+    # Base streaming dataset. Returns doc chunks in sequence.
     # Implements dataset sampling and rescalability.
     data = Sampling_Dataset(
         cfg.data_path,
@@ -89,7 +89,7 @@ def get_data_loader(cfg, rank, world_size):
         drop_final_token=cfg.sep_token,
         pack_hard=True,
     )
-    # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average. 
+    # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
     data = Preload_Buffer_Dataset(data, 10000)
     # Split line into input and target for the CLM task.
     data = Preprocess_Dataset(data, causal_lm)
