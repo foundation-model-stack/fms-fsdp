@@ -25,51 +25,30 @@ def update_config(config, **kwargs):
 def get_model_config(model_variant):
     if model_variant == "70b":
         llama_config = LLaMAConfig(
-            src_vocab_size=32000,
             emb_dim=8192,
-            norm_eps=1e-05,
+            multiple_of=4096,
             nheads=64,
+            kvheads=8,
             nlayers=80,
             hidden_grow_factor=28672 / 8192,
-            multiple_of=1,
-            activation_fn="silu",
-            max_expected_seq_len=2048,
         )
     elif model_variant == "34b":
         llama_config = LLaMAConfig(
-            src_vocab_size=32000,
             emb_dim=8192,
-            norm_eps=1e-05,
             nheads=64,
+            kvheads=8,
             nlayers=48,
             hidden_grow_factor=22016 / 8192,
-            multiple_of=1,
-            activation_fn="silu",
-            max_expected_seq_len=2048,
         )
     elif model_variant == "13b":
         llama_config = LLaMAConfig(
-            src_vocab_size=32000,
             emb_dim=5120,
-            norm_eps=1e-05,
             nheads=40,
             nlayers=40,
             hidden_grow_factor=13824 / 5120,
-            multiple_of=1,
-            activation_fn="silu",
-            max_expected_seq_len=2048,
         )
     elif model_variant == "7b":
         llama_config = LLaMAConfig(
-            src_vocab_size=32000,
-            emb_dim=4096,
-            norm_eps=1e-05,
-            nheads=32,
-            nlayers=32,
-            hidden_grow_factor=11008 / 4096,
-            multiple_of=1,
-            activation_fn="silu",
-            max_expected_seq_len=2048,
         )
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
