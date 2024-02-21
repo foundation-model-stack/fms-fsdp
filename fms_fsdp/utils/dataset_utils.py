@@ -148,14 +148,12 @@ class _Stateful_Dataset(data.IterableDataset):
     def load_from_path(self, path: str):
         """
         Count shard files in the specified checkpoint folder and determine overlap with current rank and worldsize partition.
-        Load only matching shardfile(s) and pass to load_state_dict. This is more efficient than sharding the full loaded state. 
+        Load only matching shardfile(s) and pass to load_state_dict. This is more efficient than sharding the full loaded state.
         """
         assert os.path.exists(path), "Specified checkpoint does not exist"
         assert not os.path.isfile(path), "Checkpoint should be a folder of shard states"
         fileshards = [x for x in os.listdir(path) if "loader" in x]
-        fileshards = sorted(
-            fileshards, key=lambda x: int(x.split("_")[2][:-4])
-        )
+        fileshards = sorted(fileshards, key=lambda x: int(x.split("_")[2][:-4]))
         assert (
             len(fileshards) > 0
         ), "Checkpoint directory must contain checkpoint files with 'loader' in the name"
@@ -245,7 +243,7 @@ class Preload_Buffer_Dataset(_Wrapper_Dataset):
     Fills buffer two at a time, up to desired size, then switches to one at a time to maintain size.
     Passes randomly sampled outputs one by one.
     Ensures local mixing of data without relying on sliding windows or shuffling of large buffers.
-    Any two consecutive inputs will be separated by window_size steps in expectation. 
+    Any two consecutive inputs will be separated by window_size steps in expectation.
     Rescaling-enabled.
     ...
     Args
@@ -408,7 +406,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
     Relies on a compiled metadata file to fetch shardfile lengths, assumes file already exists and is in proper csv format
     (first row "dataset/filename,documents,tokens", subsequent rows these values).
 
-    For each subdataset, splits shard files into x=worldsize fragments and grabs a 1/n contiguous span of shard fragments 
+    For each subdataset, splits shard files into x=worldsize fragments and grabs a 1/n contiguous span of shard fragments
     (contiguous to limit file reads from cloud/disk).
     For each section of each owned shardfile, shuffles documents and constructs an oversample list.
     Compiles oversample lists across subdatasets, and shuffles those lists deterministically, then flattens.
@@ -418,7 +416,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
     State consists of position indices in the global shuffled oversampled doc list.
     Returns documents in chunks up to size max_chunksize, and handles delimiter token placement between documents.
 
-    Streaming_Doc_Dataset uses integer weights to implement dataset weighting via oversampling per-epoch. For non-epoch, percentage-based 
+    Streaming_Doc_Dataset uses integer weights to implement dataset weighting via oversampling per-epoch. For non-epoch, percentage-based
     sampling, see Sampling_Dataset, which overrides this logic.
     ...
     Args
@@ -545,7 +543,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             # Read shardfrags, assemble doc list for each file shard (aggregating over fragments):
             last_shard = ""
             ndocs = -1
-            shardset: List[Any] = [] # all docs in this shard file section (dataset, shardfile index, doc index)
+            shardset = [] # all docs in this shard file section (dataset, shardfile index, doc index)
             for i, (shard, frag) in enumerate(shardfrags):
                 # On new shard, wrap up shardset
                 if shard != last_shard:
@@ -637,7 +635,9 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         chunk = doc.slice(start_index, n_pull).to_pylist()
         self.dataset_tokens_seen[dataset] += len(chunk)
         if j == n_chunks - 1:
-            chunk = chunk + [self.delimiter] # Add delimiter token to signify end of document (used upstream)
+            chunk = chunk + [
+                self.delimiter
+            ] # Add delimiter token to signify end of document (used upstream)
         return chunk
 
     def __iter__(self):
@@ -762,16 +762,18 @@ class Sampling_Dataset(_Stateful_Dataset):
         # Build subdataset iterators
         self.data = []
         for i, d in enumerate(self.datasets):
-            self.data.append(dataset(
-                datapath=datapath,
-                rank=rank,
-                worldsize=worldsize,
-                delimiter_token=delimiter_token,
-                weights=None,
-                datasets=[d],
-                verbose=verbose,
-                **kwargs
-            ))
+            self.data.append(
+                dataset(
+                    datapath=datapath,
+                    rank=rank,
+                    worldsize=worldsize,
+                    delimiter_token=delimiter_token,
+                    weights=None,
+                    datasets=[d],
+                    verbose=verbose,
+                    **kwargs,
+                )
+            )
             if verbose:
                 logging.info(
                     f"Worker {rank} assembled subdataset iterator for {d}, {i+1} of {len(self.datasets)}"
@@ -859,7 +861,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
         delimiter_token: Any,
         n_logical_shards: int = 2048,
         verbose=False,
-        **kwargs
+        **kwargs,
     ):
         assert (
             n_logical_shards % worldsize == 0
