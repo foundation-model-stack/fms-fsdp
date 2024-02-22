@@ -888,7 +888,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
             self.data.append(
                 Streaming_Doc_Dataset(
                     datapath=datapath,
-                    worldsize=worldsize,
+                    worldsize=n_logical_shards,
                     rank=self.logicals_owned[i],
                     delimiter_token=delimiter_token,
                     verbose=(rank == 0),
