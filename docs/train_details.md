@@ -8,10 +8,10 @@ schedule to reduce to 3e-5 over 2T tokens. The loss curve tracks that of Llama2 
 loss than Llama2 7B does, which we believe is the characteristic of the dataset.
 
 ### Loss Curve
-![](../images/blue_llama_loss_curve.png)
+![](../images/loss_curve.png)
 
 ### Learning Rate
-![](../images/blue_llama_lr.png)
+![](../images/lr.png)
 
 ## Lesson learned
 
@@ -26,7 +26,7 @@ any slowdowns and the checkpointing was performant and accurate. We did not find
 time, our checkpointing code had been merged into PyTorch, so we took this opportunity to make the
 switch to PyTorch checkpointing code.
 
-**200B tokens-1.9T:** We did not do any manual intervention in the job and forgot that it was running during
+**200B tokens-1.5T:** We did not do any manual intervention in the job and forgot that it was running during
 the winter break. When we came back early January, disk space on LustreFS had exceeded and
 checkpoints were failing to be written, although training job continued. The last known checkpoint was
 1.5T.
