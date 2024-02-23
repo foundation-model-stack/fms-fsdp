@@ -38,3 +38,9 @@ class train_config:
 
     # compile
     use_torch_compile: bool = False
+
+    # speculator training
+    model_path: str = "/lustre/llama_weights/hf/7B-F/"
+    n_speculator_heads: int = 3
+    speculator_width: int = 4096
+    stage2_prompt_length: int = 64
