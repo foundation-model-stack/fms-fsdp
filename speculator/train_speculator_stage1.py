@@ -24,7 +24,7 @@ from fms_fsdp.utils.train_utils import (
     setup_environ_flags,
 )
 
-from fms_extras.models import MLPSpeculator
+from fms_extras.models.speculator import MLPSpeculator
 
 
 def main(**kwargs):
@@ -66,6 +66,7 @@ def main(**kwargs):
         source = "hf",
         distributed_strategy = sharding_strategy_policy
     )
+    model = model.bfloat16()
 
     # get speculator
     speculator = MLPSpeculator(

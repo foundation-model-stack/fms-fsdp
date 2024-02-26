@@ -48,19 +48,19 @@ def train_speculator_stage1(
                 include_embeds=True,
                 use_cache=False,
             )
-        preds = speculator(embeds.detach(), input[1:])
+        preds = speculator(embeds.detach(), input[:,1:])
 
         losses = []
         loss_fn = CrossEntropyLoss()
         for i in range(preds.size(0)):
-            targ = input[:, i + 2 : cfg.seq_length + i + 2]  # b n
+            targ = input[:, i + 2 : preds.size(2) + i + 2]  # b n
             loss = loss_fn(preds[i].reshape(-1, preds.size(3)), targ.long().reshape(-1))
             losses.append(loss)
             ddp_stats[2+i] += loss.item()
         loss = sum(losses)
         
         loss.backward()
-        ddp_stats[0] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        ddp_stats[0] += speculator.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 
@@ -103,6 +103,7 @@ def train_speculator_stage1(
                     int(elapsed_tokens / world_size / elapsed_time),
                 )
                 print("token per day:", int(elapsed_tokens / elapsed_time * 3600 * 24))
+                print()
             start = time.time()
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())

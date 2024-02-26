@@ -11,6 +11,28 @@ from fms_fsdp.utils.dataset_utils import (
 )
 
 
+def parse_data_args(datas, weights):
+    # Convert csv inputs into corresponding lists of values
+    def splitstrip(x):
+        return [item.strip() for item in x.split(",")]
+
+    datas = splitstrip(datas)
+    weights = [float(x) for x in splitstrip(weights)]
+    return datas, weights
+
+
+def causal_lm(data_seq, prompt_len=1):
+    """
+    Perform causal language modeling by right-shifting the input sequence.
+    Sets first prompt_len tokens to be ignored by the loss.
+    Expects tensor inputs.
+    """
+    t = data_seq.clone()[1:]
+    data_seq = data_seq[:-1]
+    t[:prompt_len] = -100
+    return data_seq, t
+
+
 def get_dummy_loader(cfg, rank, world_size):
     """
     A simple dummy dataloader yielding incrementing vocab indices in an infinite loop
@@ -39,7 +61,7 @@ def get_dummy_loader(cfg, rank, world_size):
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
-def get_data_loader(cfg, rank, world_size, postprocess=[]):
+def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     """
     Pytorch dataloader for stateful, distributed, and rescalable training
     ...
@@ -91,23 +113,3 @@ def get_data_loader(cfg, rank, world_size, postprocess=[]):
 
     return torch.utils.data.DataLoader(data, num_workers=0, batch_size=cfg.batch_size)
 
-
-def parse_data_args(datas, weights):
-    # Convert csv inputs into corresponding lists of values
-    def splitstrip(x):
-        return [item.strip() for item in x.split(",")]
-
-    datas = splitstrip(datas)
-    weights = [float(x) for x in splitstrip(weights)]
-    return datas, weights
-
-def causal_lm(data_seq, prompt_len=1):
-    """
-    Perform causal language modeling by right-shifting the input sequence.
-    Sets first prompt_len tokens to be ignored by the loss.
-    Expects tensor inputs.
-    """
-    t = data_seq.clone()[1:]
-    data_seq = data_seq[:-1]
-    t[:prompt_len] = -100
-    return data_seq, t
