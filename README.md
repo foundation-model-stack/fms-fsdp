@@ -9,8 +9,8 @@ For an end-to-end framework, we would recommend the reader to [OLMo](https://git
 ## Training throughput benchmarks
 We benchmark the best possible throughput and the strategies we employ in the below table and share the throughput obtained on 128 A100 GPUs as well as 96 H100 GPUs, we use the exact same scripts and configurations for these GPUs.
 
-| Model Size | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> (A100 80G 128 GPUs) <br/> tokens/sec/GPU | Training throughput <br/> H100 96 GPUs <br/> tokens/sec/GPU|                                                         | 
-|------------|-------------------|--------------------------|------------|--------------------------------------|---------|-----------------------------------------------------------------------|
+| Model Size | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> (A100 80G 128 GPUs) <br/> tokens/sec/GPU | Training throughput <br/> H100 96 GPUs <br/> tokens/sec/GPU|
+|------------|-------------------|--------------------------|------------|--------------------------------------|---------|
 | 7b         | HSDP              | False                    | 2          | 3760               | 7500   |
 | 13b        |  HSDP              | False                    | 1          | 1700               | 3700  |
 | 34b        |  FSDP              | True                     | 8          | 772 | 1700 |  
