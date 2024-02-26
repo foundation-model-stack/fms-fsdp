@@ -1,6 +1,8 @@
 # Data Loader
 
-## Background
+We design a data loader as part of our pretraining that can provide shuffling in realtime while ensuring that there is no drop in GPU utilization. We design it to be scalable to multiple nodes (tested to 128 nodes), streaming, rescaling the number of GPUs during a single training run, and allows for restart from a given state.
+
+## Details
 
 The current distributed dataloader is designed to meet two important needs of data scientists running large-scale training workloads: seamless resumption of an interrupted job, and rapid iteration on dataset composition and handling.
 

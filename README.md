@@ -6,13 +6,28 @@ FMS models, in particular Llama2 by leveraging native PyTorch features - FSDP fo
 
 For an end-to-end framework, we would recommend the reader to [OLMo](https://github.com/allenai/OLMo) from AllenAI, which provides datasets, data preprocessing frameworks, leverages FSDP on AMD GPUs for training, and provides a tuning/alignment framework.
 
-| Model Size | Hardware    | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> (128 GPUs) | Profile Trace                                                         | 
-|------------|-------------|-------------------|--------------------------|------------|--------------------------------------|-----------------------------------------------------------------------|
-| 7b         | 128 * A100  | HSDP              | False                    | 2          | **3760 token/gpu/sec**               | [7b trace](https://ibm.box.com/s/ohaliqku0rl52jc9dhw1cb04opgssgy3)    |
-| 13b        | 128 * A100  | HSDP              | False                    | 1          | **1700 token/gpu/sec**               | [13b trace](https://ibm.box.com/s/2j0uib7m1p5wqjhv9dagq4331n62iyv6)   |
-| 34b        | 128 * A100  | FSDP              | True                     | 8          | **772 token/gpu/sec**                | [34b trace](https://ibm.box.com/s/tf7x6254egzgzrn6ceh6kgdgy0rbowz6)   |  
-| 70b        | 128 * A100  | FSDP              | True                     | 6          | **380 token/gpu/sec**                | [70b trace](https://ibm.box.com/s/5o1ohr1144nloqjrelsvunrq0rutyynu)   |
+## Training throughput benchmarks
+We benchmark the best possible throughput and the strategies we employ in the below table and share the throughput obtained on 128 A100 GPUs as well as 96 H100 GPUs, we use the exact same scripts and configurations for these GPUs.
 
+| Model Size | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> (A100 80G 128 GPUs) <br/> tokens/sec/GPU | Training throughput <br/> H100 96 GPUs <br/> tokens/sec/GPU|                                                         | 
+|------------|-------------------|--------------------------|------------|--------------------------------------|---------|-----------------------------------------------------------------------|
+| 7b         | HSDP              | False                    | 2          | 3760               | 7500   |
+| 13b        |  HSDP              | False                    | 1          | 1700               | 3700  |
+| 34b        |  FSDP              | True                     | 8          | 772 | 1700 |  
+| 70b        | FSDP              | True                     | 6          | 380| 850 |
+
+We also compute the MFU numbers for each of the above configuration. We use the PyTorch [FLOP counter]() to compute the FLOPs and a theoretical maximum of 312TFLOPs/sec for `bf16` operations on A100 GPUs and 989TFLOPs/sec for H100 GPUs. We cross verify the FLOP counter output with that of math based computation, the latter following the approach outlined in the MegatronLM paper and notice that they are within 2% for the 7B model (384TFLOPs using FLOP counter and 377 using the math formulae. Note that we made changes to the math in the paper to account for lack of activation checkpointing. The MFU numbers are summarized in the below table.
+
+| Model Size | Batch size | MFU (A100 80G) | MFU (H100 80G) |
+|------|-------|---------|------|
+| 7B | 2 | 0.56 | 0.36 |
+| 13B | 1 | 0.48 | 0.34 |
+| 34B | 8 | 0.68 | 0.48 |
+| 70B | 6 | 0.69 | 0.49 |
+
+A few points to note here, on the A100s, we note that for 13B we are not utilizing the hardware as well (only 0.48 MFU) because of smaller batch size. We can dial up the MFU by turning on activation checkpointing, however the throughput falls to 1600 tokens/sec/GPU. Whereas, note that the gaps here are more glaring with H100s where the MFU for 7 and 13B falls below 0.40.
+
+Another point to note here is the "large" batch sizes for 34 and 70B models. Arguably, one usually does not train with large batch sizes (typical sizes are 4M tokens in a batch), whereas more recent efforts like OLMo have seen batch sizes mid-training to go as high as 16M tokens.
 
 ## Installation
 You need to install the required packages by running the following command.
@@ -21,10 +36,10 @@ We recommend running the latest [PyTorch nightlies](https://pytorch.org/) and la
 pip install -r requirements.txt
 ```
 
-## Train
+## Training
 
 ### Model
-We trained one model, a replica of Llama2 7B as an exemplar on IBM curated data. This model was trained to 2.2T tokens with a 4k context length on 128 A100 GPUs for a total of 162k GPU hours, achieving an efficiency of 3500 tokens/sec/GPU (~38B tokens/day), which is roughly 20% faster than the Llama2 published training time. These speedups were possible by combining multiple techniques - SDPA Flash v2 implementation, FSDP with overlap in computation and communication, and selective activation checkpointing.
+We trained one model, a replica of Llama2 7B as an exemplar on IBM curated data. This model was trained to 2.2T tokens with a 4k context length on 128 A100 GPUs for a total of 162k GPU hours, achieving an efficiency of 3700 tokens/sec/GPU (~40B tokens/day), which is roughly 20% faster than the Llama2 published training time. These speedups were possible by combining multiple techniques - SDPA Flash v2 implementation, FSDP with overlap in computation and communication, and selective activation checkpointing.
 The generated model has a good performance on various metrics as evaluated by [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness), with MMLU score of 0.5. We share further [scores](docs/evaluation.md) in the details of the model for completeness.
 
 ### Dataset
