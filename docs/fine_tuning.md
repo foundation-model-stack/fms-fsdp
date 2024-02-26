@@ -1,7 +1,6 @@
 # Fine Tuning
 
-In past, we have observed that while some models give competitive performance for in-context learning
-tasks, they are hard to fine tune on a general task. To validate that the stack produces a model which is as
+To validate that the stack produces a model which is as
 easy to fine-tune as Llama models, we convert the FSDP checkpoint into a HF checkpoint and fine tune it
 using popular fine-tuning configurations and data mixes.
 
@@ -10,7 +9,7 @@ Specifically, we follow Allen AI’s [open-instruct](https://github.com/allenai/
 scores are presented below and we note improvements in several tasks. We did not do a hyperparameter
 exploration for the best parameters to fine-tune Blue Llama. We note that optimal hyperparameter for
 Blue Llama tuning could be different from Llama 2 as they are likely to have followed different learning
-rate schedules (Llama 2 learning rate schedule was not published).
+rate schedules.
 
 | Evaluation metric          | Llama2-7B (baseline) | Blue Llama-7B |
 |----------------------------|----------------------|---------------|
