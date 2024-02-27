@@ -31,7 +31,7 @@ def main(**kwargs):
     # get configs
     cfg = config.train_config()
     update_config(cfg, **kwargs)
-    base_seq_len = cfg.seq_length
+    # base_seq_len = cfg.seq_length
     cfg.seq_length = cfg.seq_length + cfg.n_speculator_heads + 1
 
     # ensure reproducibility
@@ -100,7 +100,7 @@ def main(**kwargs):
     if rank == 0:
         print("Constructing datasets...")
     if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg, rank, world_size)
+        train_loader = get_data_loader(cfg, rank, world_size, postprocess=[])
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:
@@ -153,14 +153,23 @@ def main(**kwargs):
     )
 
     # LR schedule
-    warmup_interval = min(2000, cfg.num_steps // 20)
-    schedule = lambda x: min(
+    warmup_interval = min(2000, cfg.stage2_start_step // 20)
+    stage1_schedule = lambda x: min(
         1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
         0.1
         + 0.5
         * (1 - 0.1)
-        * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+        * (1 + math.cos(min(x, cfg.stage2_start_step) / cfg.stage2_start_step * math.pi)),
     )
+    warmup_interval = min(2000, (cfg.num_steps-cfg.stage2_start_step) // 20)
+    stage2_schedule = lambda x: min(
+        0.1 * (1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2),
+        0.01
+        + 0.5
+        * (1 - 0.01)
+        * (1 + math.cos(min(x, cfg.num_steps-cfg.stage2_start_step) / (cfg.num_steps-cfg.stage2_start_step) * math.pi)),
+    )
+    schedule = lambda x: stage1_schedule(x) if x <= cfg.stage2_start_step else stage2_schedule(x-cfg.stage2_start_step)
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler

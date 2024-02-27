@@ -3,17 +3,45 @@ from torch.nn import CrossEntropyLoss
 import time
 import os
 import torch.distributed as dist
+from fms.utils.generation import generate
 
 
-def stage1_loss(inp, out, preds, seqlen, ddp_stats):
+def stage1_loss(model, speculator, input, loss_fn, ddp_stats):
+    with torch.no_grad():
+        _, embeds = model(
+            input[:, :-speculator.n_predict - 1],
+            include_embeds=True,
+            use_cache=False,
+        )
+    preds = speculator(embeds.detach(), input[:,1:])
+
     losses = []
-    loss_fn = CrossEntropyLoss()
     for i in range(preds.size(0)):
-        targ = inp[:, i + 2 : seqlen + i + 2]  # b n
+        targ = input[:, i + 2 : preds.size(2) + i + 2]  # b n
         loss = loss_fn(preds[i].reshape(-1, preds.size(3)), targ.long().reshape(-1))
         losses.append(loss)
         ddp_stats[2+i] += loss.item()
-    return sum(losses), ddp_stats
+    loss = sum(losses)
+    return loss, ddp_stats, input.numel()
+
+def stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats):
+    with torch.no_grad():
+        grow_factor = cfg.stage2_batch_size // cfg.batch_size
+        assert cfg.stage2_prompt_length * grow_factor <= cfg.seq_length, "Error: batch is too small for specified partition"
+        input = input[:, : cfg.stage2_prompt_length * grow_factor].reshape(input.size(0) * grow_factor, cfg.stage2_prompt_length)
+        targs, embeds = generate(model, input, cfg.seq_length, cfg.stage2_seq_lenth, do_sample=True, use_cache=True, include_embeds=True)
+        targs = targs[:, -cfg.stage2_seq_length :]
+        embeds = embeds[:, -cfg.stage2_seq_length : -speculator.n_predict]
+    preds = speculator(embeds.detach(), targs[:, :-1].detach())
+
+    losses = []
+    for i in range(preds.size(0)):
+        targ = targs[:, i + 1 : preds.size(2) + i + 1]  # b n
+        loss = loss_fn(preds[i].reshape(-1, preds.size(3)), targ.long().reshape(-1))
+        losses.append(loss)
+        ddp_stats[2+i] += loss.item()
+    loss = sum(losses)
+    return loss, ddp_stats, targs.numel()
 
 def train_speculator_stage1(
     cfg,
@@ -35,30 +63,20 @@ def train_speculator_stage1(
 
     start = time.time()
     loop_start = time.time()
-    for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
+    loss_fn = CrossEntropyLoss()
+    elapsed_tokens = 0
+    for batch_idx, input in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break
         input = input.to(local_rank)
-        label = label.to(local_rank)
 
         optimizer.zero_grad()
-        with torch.no_grad():
-            _, embeds = model(
-                input[:, :-cfg.n_speculator_heads - 1],
-                include_embeds=True,
-                use_cache=False,
-            )
-        preds = speculator(embeds.detach(), input[:,1:])
 
-        losses = []
-        loss_fn = CrossEntropyLoss()
-        for i in range(preds.size(0)):
-            targ = input[:, i + 2 : preds.size(2) + i + 2]  # b n
-            loss = loss_fn(preds[i].reshape(-1, preds.size(3)), targ.long().reshape(-1))
-            losses.append(loss)
-            ddp_stats[2+i] += loss.item()
-        loss = sum(losses)
-        
+        if batch_idx <= cfg.stage2_start_step:
+            loss, ddp_stats, step_tok = stage1_loss(model, speculator, input, loss_fn, ddp_stats)
+        else:
+            loss, ddp_stats, step_tok = stage2_loss(model, speculator, input, loss_fn, ddp_stats)
+
         loss.backward()
         ddp_stats[0] += speculator.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
@@ -75,9 +93,7 @@ def train_speculator_stage1(
             g_norm = ddp_stats[0] / ddp_stats[1]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
-            elapsed_tokens = (
-                (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
-            )
+            elapsed_tokens += cfg.report_interval * world_size * step_tok
             if rank == 0:
                 print("step:", batch_idx)
                 print("tokens seen:", n_tok + elapsed_tokens)

@@ -43,4 +43,7 @@ class train_config:
     model_path: str = "/lustre/llama_weights/hf/7B-F/"
     n_speculator_heads: int = 3
     speculator_width: int = 4096
+    stage2_start_step: int = 15000
     stage2_prompt_length: int = 64
+    stage2_batch_size: int = 96
+    stage2_seq_length: int = 256
