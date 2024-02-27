@@ -75,7 +75,7 @@ def train_speculator_stage1(
         if batch_idx <= cfg.stage2_start_step:
             loss, ddp_stats, step_tok = stage1_loss(model, speculator, input, loss_fn, ddp_stats)
         else:
-            loss, ddp_stats, step_tok = stage2_loss(model, speculator, input, loss_fn, ddp_stats)
+            loss, ddp_stats, step_tok = stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats)
 
         loss.backward()
         ddp_stats[0] += speculator.clip_grad_norm_(cfg.grad_clip_thresh).item()
