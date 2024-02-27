@@ -164,8 +164,8 @@ def main(**kwargs):
     stage2_schedule = lambda x: min(
         0.1 * (1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2),
         0.01
-        + 0.5
-        * (1 - 0.01)
+        + 0.05
+        * (1 - 0.1)
         * (1 + math.cos(min(x, cfg.num_steps-cfg.stage2_start_step) / (cfg.num_steps-cfg.stage2_start_step) * math.pi)),
     )
     schedule = lambda x: stage1_schedule(x) if x <= cfg.stage2_start_step else stage2_schedule(x-cfg.stage2_start_step)
