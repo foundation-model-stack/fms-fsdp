@@ -29,7 +29,7 @@ def stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats):
         grow_factor = cfg.stage2_batch_size // cfg.batch_size
         assert cfg.stage2_prompt_length * grow_factor <= cfg.seq_length, "Error: batch is too small for specified partition"
         input = input[:, : cfg.stage2_prompt_length * grow_factor].reshape(input.size(0) * grow_factor, cfg.stage2_prompt_length)
-        targs, embeds = generate(model, input, cfg.seq_length, cfg.stage2_seq_lenth, do_sample=True, use_cache=True, include_embeds=True)
+        targs, embeds = generate(model, input, cfg.seq_length, cfg.stage2_seq_length, do_sample=True, use_cache=True, include_embeds=True)
         targs = targs[:, -cfg.stage2_seq_length :]
         embeds = embeds[:, -cfg.stage2_seq_length : -speculator.n_predict]
     preds = speculator(embeds.detach(), targs[:, :-1].detach())
