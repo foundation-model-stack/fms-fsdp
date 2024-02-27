@@ -31,7 +31,6 @@ def main(**kwargs):
     # get configs
     cfg = config.train_config()
     update_config(cfg, **kwargs)
-    # base_seq_len = cfg.seq_length
     cfg.seq_length = cfg.seq_length + cfg.n_speculator_heads + 1
 
     # ensure reproducibility

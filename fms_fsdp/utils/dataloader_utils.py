@@ -100,7 +100,7 @@ def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     # Wrap above dataset in packing logic to form constant-length lines.
     data = Buffer_Dataset(
         data,
-        cfg.seq_length + 1,
+        cfg.seq_length if causal_lm not in postprocess else cfg.seq_length + 1,
         drop_final_token=cfg.sep_token,
         pack_hard=True,
     )
