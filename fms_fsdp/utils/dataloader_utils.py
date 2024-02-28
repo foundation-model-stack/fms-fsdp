@@ -103,6 +103,8 @@ def parse_data_args(datas, weights):
     def splitstrip(x):
         return [item.strip() for item in x.split(",")]
 
-    datas = splitstrip(datas)
-    weights = [float(x) for x in splitstrip(weights)]
+    datas = splitstrip(datas) if isinstance(datas, str) else list(datas)
+    weights = splitstrip(weights) if isinstance(weights, str) else list(weights)
+
+    weights = [float(weight) for weight in weights]
     return datas, weights
