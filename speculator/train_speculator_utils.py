@@ -125,6 +125,7 @@ def train_speculator(
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if batch_idx % cfg.checkpoint_interval == 0:
+            torch.cuda.empty_cache()
             checkpointer.save(
                 batch_idx,
                 speculator,
@@ -132,5 +133,6 @@ def train_speculator(
                 train_loader,
                 tokens_seen=elapsed_tokens + n_tok,
             )
+            torch.cuda.empty_cache()
 
     return train_loss
