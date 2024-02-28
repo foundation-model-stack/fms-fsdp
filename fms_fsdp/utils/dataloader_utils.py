@@ -101,10 +101,17 @@ def get_data_loader(cfg, rank, world_size):
 def parse_data_args(datas, weights):
     # Convert csv inputs into corresponding lists of values
     def splitstrip(x):
-        return [item.strip() for item in x.split(",")]
+        if isinstance(x, str):
+            return [item.strip() for item in x.split(",")]
+        elif isinstance(x, (list, tuple)):
+            return list(datas)
+        elif isinstance(x, (int, float, complex)):
+            return [x]
+        else:
+            raise ValueError(f"arg input {x} cannot be parsed.")
 
-    datas = splitstrip(datas) if isinstance(datas, str) else list(datas)
-    weights = splitstrip(weights) if isinstance(weights, str) else list(weights)
+    datas = splitstrip(datas)
+    weights = splitstrip(weights)
 
     weights = [float(weight) for weight in weights]
     return datas, weights
