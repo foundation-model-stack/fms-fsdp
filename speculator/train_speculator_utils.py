@@ -43,7 +43,7 @@ def stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats):
     loss = sum(losses)
     return loss, ddp_stats, targs.numel()
 
-def train_speculator_stage1(
+def train_speculator(
     cfg,
     model,
     speculator,
