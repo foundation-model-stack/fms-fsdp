@@ -152,17 +152,17 @@ def main(**kwargs):
     )
 
     # LR schedule
-    warmup_interval = min(2000, cfg.stage2_start_step // 20)
+    warmup_interval1 = min(2000, cfg.stage2_start_step // 20)
     stage1_schedule = lambda x: min(
-        1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+        1 - (1 - min(x, warmup_interval1) / warmup_interval1) ** 2,
         0.1
         + 0.5
         * (1 - 0.1)
         * (1 + math.cos(min(x, cfg.stage2_start_step) / cfg.stage2_start_step * math.pi)),
     )
-    warmup_interval = min(2000, (cfg.num_steps-cfg.stage2_start_step) // 20)
+    warmup_interval2 = min(2000, (cfg.num_steps-cfg.stage2_start_step) // 20)
     stage2_schedule = lambda x: min(
-        0.1 * (1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2),
+        0.1 * (1 - (1 - min(x, warmup_interval2) / warmup_interval2) ** 2),
         0.01
         + 0.05
         * (1 - 0.1)
