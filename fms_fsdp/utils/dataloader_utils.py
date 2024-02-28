@@ -111,7 +111,5 @@ def parse_data_args(datas, weights):
             raise ValueError(f"arg input {x} cannot be parsed.")
 
     datas = splitstrip(datas)
-    weights = splitstrip(weights)
-
-    weights = [float(weight) for weight in weights]
+    weights = [float(x) for x in splitstrip(weights)]
     return datas, weights
