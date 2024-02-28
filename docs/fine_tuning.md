@@ -7,11 +7,11 @@ using popular fine-tuning configurations and data mixes.
 Specifically, we follow Allen AI’s [open-instruct](https://github.com/allenai/open-instruct) framework, leveraging the TULU v2 stack as-is
 (DeepSpeed, TULU v2 mixture and recommended configuration for Llama 2 models). The tuned model
 scores are presented below and we note improvements in several tasks. We did not do a hyperparameter
-exploration for the best parameters to fine-tune Blue Llama. We note that optimal hyperparameter for
-Blue Llama tuning could be different from Llama 2 as they are likely to have followed different learning
+exploration for the best parameters to fine-tune LlamaT. We note that optimal hyperparameter for
+LlamaT tuning could be different from Llama 2 as they are likely to have followed different learning
 rate schedules.
 
-| Evaluation metric          | Llama2-7B (baseline) | Blue Llama-7B |
+| Evaluation metric          | Llama2-7B (baseline) | LlamaT-7B |
 |----------------------------|----------------------|---------------|
 | MMLU (5-shot weighted avg) | 0.53                 | 0.49          |
 | Arc challenge              | 0.48                 | 0.43          |
