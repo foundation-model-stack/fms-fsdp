@@ -177,6 +177,7 @@ def main(**kwargs):
     # Train
     if rank == 0:
         print(f"Training for {cfg.num_steps} steps")
+    torch.cuda.empty_cache()
     train_speculator(
         cfg,
         model,
