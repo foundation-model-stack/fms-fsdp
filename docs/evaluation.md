@@ -3,7 +3,7 @@
 We convert the sharded FSDP checkpoint to a Hugging Face checkpoint and run [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness)
 without any changes. The key scores at the 2T checkpoint are summarized below:
 
-| Evaluation metric          | Llama2-7B (baseline) | Blue Llama-7B |
+| Evaluation metric          | Llama2-7B (baseline) | LlamaT-7B |
 |----------------------------|----------------------|---------------|
 | MMLU (zero shot)           | 0.41                 | 0.43          |
 | MMLU (5-shot weighted avg) | 0.47                 | 0.50          |

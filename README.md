@@ -27,7 +27,7 @@ We also compute the MFU numbers for each of the above configuration. We use the 
 
 A few points to note here, on the A100s, we note that for 13B we are not utilizing the hardware as well (only 0.48 MFU) because of smaller batch size. We can dial up the MFU by turning on activation checkpointing, however the throughput falls to 1600 tokens/sec/GPU. Whereas, note that the gaps here are more glaring with H100s where the MFU for 7 and 13B falls below 0.40.
 
-Another point to note here is the "large" batch sizes for 34 and 70B models. Arguably, one usually does not train with large batch sizes (typical sizes are 4M tokens in a batch), whereas more recent efforts like OLMo have seen batch sizes mid-training to go as high as 16M tokens.
+Another point to note here is that for the larger models, we could increase the throughput by a few percentage points when we increase the batch size. However, we have left the batches to be smaller to allow for scaling to 1024 GPUs without introducing tensor parallelism.
 
 ## Installation
 You need to install the required packages by running the following command.
