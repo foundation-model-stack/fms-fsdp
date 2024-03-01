@@ -12,12 +12,17 @@ from fms_fsdp.utils.dataset_utils import (
 def parse_data_args(datas, weights):
     # Convert csv inputs into corresponding lists of values
     def splitstrip(x):
-        return [item.strip() for item in x.split(",")]
+        if isinstance(x, str):
+            return [item.strip() for item in x.split(",")]
+        elif isinstance(x, (list, tuple)):
+            return list(datas)
+        elif isinstance(x, (int, float, complex)):
+            return [x]
+        else:
+            raise ValueError(f"arg input {x} cannot be parsed.")
 
-    datas = splitstrip(datas) if isinstance(datas, str) else list(datas)
-    weights = splitstrip(weights) if isinstance(weights, str) else list(weights)
-
-    weights = [float(weight) for weight in weights]
+    datas = splitstrip(datas)
+    weights = [float(x) for x in splitstrip(weights)]
     return datas, weights
 
 
