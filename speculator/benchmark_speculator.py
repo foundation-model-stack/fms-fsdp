@@ -3,15 +3,16 @@ import itertools
 import os
 import time
 
+import fms_extras.models.paged_llama
 import torch
 import torch._inductor.config
 from fms.models import get_model
 from fms.utils import generation, tokenizers
-from torch import distributed as dist
-
-import fms_extras.models.paged_llama
 from fms_extras.models.speculator import MLPSpeculator
 from fms_extras.utils.generation import paged_generate, speculative_generate
+from torch import distributed as dist
+
+from fms_fsdp.utils.dataset_utils import Streaming_Doc_Dataset
 
 
 # This example script validates the LLaMA implementation by running inference on a couple of prompts.
@@ -55,10 +56,10 @@ parser.add_argument(
     help="Path to the directory containing pyarrow data shard(s)",
 )
 parser.add_argument(
-  "--prompt_len",
-  type=int,
-  default=512,
-  help="How many tokens from each document to use as a starter prompt",
+    "--prompt_len",
+    type=int,
+    default=512,
+    help="How many tokens from each document to use as a starter prompt",
 )
 
 parser.add_argument(
@@ -165,15 +166,41 @@ kv_cache_manager = PagedKVCacheManager(
 )
 print("cache initialization complete on rank", local_rank)
 
-# TODO: load data
+print("loading dataset", args.data_path)
+pardir = os.path.dirname(args.data_path)
+subdir = args.data_path[len(pardir) + 1 :]
+dataset = Streaming_Doc_Dataset(
+    pardir,
+    local_rank,
+    world_size,
+    -1,
+    datasets=[
+        subdir,
+    ],
+    min_length=args.prompt_len,
+    max_chunksize=8192,
+)
+dataset = iter(dataset)
+data = []
+in_middle = False
+print("pulling data to build reusable prompt set")
+while len(data) < 256:
+    chunk = next(dataset)
+    if not in_middle:
+        data.append(chunk[: args.prompt_len])
+    if chunk[-1] == -1:
+        in_middle = False
+    else:
+        in_middle = True
+data = torch.IntTensor(data)
 
 
-def ids_for_prompt(prompt):
-    tokens = tokenizer.tokenize(prompt)
-    tokens = ["<s>"] + tokens
-    ids = tokenizer.convert_tokens_to_ids(tokens)
-    ids = torch.tensor(ids, dtype=torch.long, device=device)
-    return ids
+# def ids_for_prompt(prompt):
+#     tokens = tokenizer.tokenize(prompt)
+#     tokens = ["<s>"] + tokens
+#     ids = tokenizer.convert_tokens_to_ids(tokens)
+#     ids = torch.tensor(ids, dtype=torch.long, device=device)
+#     return ids
 
 
 def print_result(result, inp, n_steps):
@@ -190,7 +217,7 @@ def print_result(result, inp, n_steps):
     print()
 
 
-def infer(ids, warmup):
+def infer(ids, k, warmup):
     # With greedy generation (do_sample=False) we _should_ always get the same results.
     # There is currently a bug in start_pos for batched rotary embeddings that can lead
     # varying results for the same prompt.
@@ -206,6 +233,8 @@ def infer(ids, warmup):
             new_tokens=100,
             max_seq_len=model.config.max_expected_seq_len,
             decode_model=decode_model,
+            top_k=k,
+            threshes=[6, 4, 3],
         )
     else:
         result, n_steps, generated_token_time_out = paged_generate(
@@ -220,10 +249,11 @@ def infer(ids, warmup):
     if not warmup:
         total_tokens = 0
         for i in range(len(result)):
-            print_result(result[i], ids[i], n_steps)
+            # print_result(result[i], ids[i], n_steps)
             total_tokens += len(result[i]) - len(ids[i])
         avg_tokens = total_tokens / len(result)
-        print(f"time per token: {generated_token_time_out / avg_tokens}")
+        return generated_token_time_out / avg_tokens, avg_tokens
+    return None
 
 
 if args.compile:
@@ -238,28 +268,20 @@ if args.compile:
         speculator = torch.compile(speculator, mode=args.compile_mode)
 
 
-# TODO: Replace below with double-for-loop
-
-
-
-
-template = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{}\n\n### Response:"
-
-prompt1 = template.format("Provide a list of instructions for preparing chicken soup.")
-prompt2 = template.format("Explain some popular greetings in Spanish.")
-prompt3 = template.format("Explain to me why ignorance is bliss.")
-prompt4 = template.format(
-    "I have just come into a very large sum of money. I received the money from my parents who told me I could do whatever I want with it. My first thought was to go to a financial advisor. Provide me a list of things that I can do with my new found wealth."
-)
-
-prompt1 = ids_for_prompt(prompt1)
-prompt2 = ids_for_prompt(prompt2)
-prompt3 = ids_for_prompt(prompt3)
-prompt4 = ids_for_prompt(prompt4)
-
-# ids = [prompt1, prompt2, prompt3, prompt4]
-ids = [prompt1]
-
-infer(ids, warmup=True)
-print("generating output", local_rank)
-infer(ids, warmup=False)
+torch.cuda.empty_cache()
+for bsize in [1, 2, 4]:
+    for k in [1, 2, 4, 8, 16, 32]:
+        alltimes = 0
+        alltokens = 0
+        ntrials = 256 // bsize
+        torch.cuda.empty_cache()
+        for i in range(ntrials):
+            inp = data[i * bsize : i * bsize + bsize]
+            if i == 0:
+                infer(inp, k, True)
+            t, tok = infer(inp, k, False)
+            alltimes += t
+            alltokens += tok
+        print(
+            f"bsize = {bsize}, k = {k}, time = {alltimes/ntrials}, tokens = {alltokens/ntrials}"
+        )
