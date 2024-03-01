@@ -4,18 +4,18 @@ import os
 import fire
 import torch
 import torch.optim as optim
-from fms.models.llama import LLaMA
 from fms.models import get_model
+from fms.models.llama import LLaMA
+from fms_extras.models.speculator import MLPSpeculator
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
 from torch.optim.lr_scheduler import LambdaLR
-
 from train_speculator_utils import train_speculator
 
-from fms_fsdp import config, policies
+from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
-from fms_fsdp.utils.config_utils import get_model_config, update_config
+from fms_fsdp.utils.config_utils import update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
@@ -23,8 +23,6 @@ from fms_fsdp.utils.train_utils import (
     setup,
     setup_environ_flags,
 )
-
-from fms_extras.models.speculator import MLPSpeculator
 
 
 def main(**kwargs):
@@ -60,10 +58,10 @@ def main(**kwargs):
     model = get_model(
         "llama",
         "7b",
-        model_path = cfg.model_path,
-        device_type = "cuda",
-        source = "hf",
-        distributed_strategy = sharding_strategy_policy
+        model_path=cfg.model_path,
+        device_type="cuda",
+        source="hf",
+        distributed_strategy=sharding_strategy_policy,
     )
     model = model.bfloat16()
 
@@ -75,7 +73,6 @@ def main(**kwargs):
         cfg.n_speculator_heads,
     )
     speculator.reset_parameters()
-
 
     # llama_config = get_model_config(cfg.model_variant)
 
@@ -89,10 +86,11 @@ def main(**kwargs):
     # else:
     #     model = LLaMA(llama_config)
     #     model.reset_parameters()
-    
 
     if rank == 0:
-        total_params = sum(p.numel() for p in speculator.parameters() if p.requires_grad)
+        total_params = sum(
+            p.numel() for p in speculator.parameters() if p.requires_grad
+        )
         print(f"\n--> speculator has {total_params / 1e6} Million params\n")
 
     # get data loader
@@ -137,13 +135,14 @@ def main(**kwargs):
 
     # Optimizer
     optimizer = optim.AdamW(
-        speculator.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+        speculator.parameters(),
+        lr=cfg.learning_rate,
+        betas=(0.9, 0.95),
+        weight_decay=0.1,
     )
 
     # optionally load from checkpoint (when continue pretraining)
-    checkpointer = Checkpointer(
-        cfg.ckpt_save_path, 1000, "ddp", rank, local_rank
-    )
+    checkpointer = Checkpointer(cfg.ckpt_save_path, 1000, "ddp", rank, local_rank)
     speculator, optimizer, train_loader, start_step, tokens_seen = checkpointer.load(
         speculator,
         optimizer,
@@ -158,17 +157,31 @@ def main(**kwargs):
         0.1
         + 0.5
         * (1 - 0.1)
-        * (1 + math.cos(min(x, cfg.stage2_start_step) / cfg.stage2_start_step * math.pi)),
+        * (
+            1
+            + math.cos(min(x, cfg.stage2_start_step) / cfg.stage2_start_step * math.pi)
+        ),
     )
-    warmup_interval2 = min(2000, (cfg.num_steps-cfg.stage2_start_step) // 20)
+    warmup_interval2 = min(2000, (cfg.num_steps - cfg.stage2_start_step) // 20)
     stage2_schedule = lambda x: min(
         0.1 * (1 - (1 - min(x, warmup_interval2) / warmup_interval2) ** 2),
         0.01
         + 0.05
         * (1 - 0.1)
-        * (1 + math.cos(min(x, cfg.num_steps-cfg.stage2_start_step) / (cfg.num_steps-cfg.stage2_start_step) * math.pi)),
+        * (
+            1
+            + math.cos(
+                min(x, cfg.num_steps - cfg.stage2_start_step)
+                / (cfg.num_steps - cfg.stage2_start_step)
+                * math.pi
+            )
+        ),
     )
-    schedule = lambda x: stage1_schedule(x) if x <= cfg.stage2_start_step else stage2_schedule(x-cfg.stage2_start_step)
+    schedule = (
+        lambda x: stage1_schedule(x)
+        if x <= cfg.stage2_start_step
+        else stage2_schedule(x - cfg.stage2_start_step)
+    )
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler

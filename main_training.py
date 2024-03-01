@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from fms_fsdp import config, policies
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
-from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader, causal_lm
+from fms_fsdp.utils.dataloader_utils import causal_lm, get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
     get_profiler,

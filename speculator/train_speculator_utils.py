@@ -1,35 +1,49 @@
-import torch
-from torch.nn import CrossEntropyLoss
-import time
 import os
+import time
+
+import torch
 import torch.distributed as dist
 from fms.utils.generation import generate
+from torch.nn import CrossEntropyLoss
 
 
 def stage1_loss(model, speculator, input, loss_fn, ddp_stats):
     with torch.no_grad():
         _, embeds = model(
-            input[:, :-speculator.n_predict - 1],
+            input[:, : -speculator.n_predict - 1],
             include_embeds=True,
             use_cache=False,
         )
-    preds = speculator(embeds.detach(), input[:,1:])
+    preds = speculator(embeds.detach(), input[:, 1:])
 
     losses = []
     for i in range(preds.size(0)):
         targ = input[:, i + 2 : preds.size(2) + i + 2]  # b n
         loss = loss_fn(preds[i].reshape(-1, preds.size(3)), targ.long().reshape(-1))
         losses.append(loss)
-        ddp_stats[2+i] += loss.item()
+        ddp_stats[2 + i] += loss.item()
     loss = sum(losses)
     return loss, ddp_stats, input.numel()
+
 
 def stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats):
     with torch.no_grad():
         grow_factor = cfg.stage2_batch_size // cfg.batch_size
-        assert cfg.stage2_prompt_length * grow_factor <= cfg.seq_length, "Error: batch is too small for specified partition"
-        input = input[:, : cfg.stage2_prompt_length * grow_factor].reshape(input.size(0) * grow_factor, cfg.stage2_prompt_length)
-        targs, embeds = generate(model, input, cfg.seq_length, cfg.stage2_seq_length, do_sample=True, use_cache=True, include_embeds=True)
+        assert (
+            cfg.stage2_prompt_length * grow_factor <= cfg.seq_length
+        ), "Error: batch is too small for specified partition"
+        input = input[:, : cfg.stage2_prompt_length * grow_factor].reshape(
+            input.size(0) * grow_factor, cfg.stage2_prompt_length
+        )
+        targs, embeds = generate(
+            model,
+            input,
+            cfg.seq_length,
+            cfg.stage2_seq_length,
+            do_sample=True,
+            use_cache=True,
+            include_embeds=True,
+        )
         targs = targs[:, -cfg.stage2_seq_length :]
         embeds = embeds[:, -cfg.stage2_seq_length : -speculator.n_predict]
     preds = speculator(embeds.detach(), targs[:, :-1].detach())
@@ -39,9 +53,10 @@ def stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats):
         targ = targs[:, i + 1 : preds.size(2) + i + 1]  # b n
         loss = loss_fn(preds[i].reshape(-1, preds.size(3)), targ.long().reshape(-1))
         losses.append(loss)
-        ddp_stats[2+i] += loss.item()
+        ddp_stats[2 + i] += loss.item()
     loss = sum(losses)
     return loss, ddp_stats, targs.numel()
+
 
 def train_speculator(
     cfg,
@@ -73,9 +88,13 @@ def train_speculator(
         optimizer.zero_grad()
 
         if batch_idx <= cfg.stage2_start_step:
-            loss, ddp_stats, step_tok = stage1_loss(model, speculator, input, loss_fn, ddp_stats)
+            loss, ddp_stats, step_tok = stage1_loss(
+                model, speculator, input, loss_fn, ddp_stats
+            )
         else:
-            loss, ddp_stats, step_tok = stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats)
+            loss, ddp_stats, step_tok = stage2_loss(
+                cfg, model, speculator, input, loss_fn, ddp_stats
+            )
 
         loss.backward()
         ddp_stats[0] += speculator.clip_grad_norm_(cfg.grad_clip_thresh).item()
