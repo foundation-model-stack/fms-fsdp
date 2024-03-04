@@ -11,6 +11,7 @@ from fms.utils import generation, tokenizers
 from fms_extras.models.speculator import MLPSpeculator
 from fms_extras.utils.generation import paged_generate, speculative_generate
 from torch import distributed as dist
+from tqdm import tqdm
 
 from fms_fsdp.utils.dataset_utils import Streaming_Doc_Dataset
 
@@ -53,7 +54,12 @@ parser.add_argument(
 parser.add_argument(
     "--data_path",
     type=str,
-    help="Path to the directory containing pyarrow data shard(s)",
+    help="Path to the directory containing meta folder with collective file count metadata",
+)
+parser.add_argument(
+    "--subdata",
+    type=str,
+    help="Subfolder of data_path containing pyarrow shard file(s)",
 )
 parser.add_argument(
     "--prompt_len",
@@ -91,7 +97,6 @@ parser.add_argument(
     action="store_true",
     help="This is a distributed job (multiple instances run with RANK+WORLD_SIZE)",
 )
-parser.add_argument("--context_file", type=str, default=None, help="File to summarize")
 
 args = parser.parse_args()
 
@@ -134,7 +139,7 @@ model = get_model(
 )
 decode_model = None
 
-tokenizer = tokenizers.get_tokenizer(args.tokenizer)
+tokenizer = tokenizers.get_tokenizer(args.tokenizer_path)
 model.eval()
 torch.set_grad_enabled(False)
 speculator = None
@@ -167,15 +172,13 @@ kv_cache_manager = PagedKVCacheManager(
 print("cache initialization complete on rank", local_rank)
 
 print("loading dataset", args.data_path)
-pardir = os.path.dirname(args.data_path)
-subdir = args.data_path[len(pardir) + 1 :]
 dataset = Streaming_Doc_Dataset(
-    pardir,
+    args.data_path,
     local_rank,
     world_size,
     -1,
     datasets=[
-        subdir,
+        args.subdata,
     ],
     min_length=args.prompt_len,
     max_chunksize=8192,
@@ -184,7 +187,7 @@ dataset = iter(dataset)
 data = []
 in_middle = False
 print("pulling data to build reusable prompt set")
-while len(data) < 256:
+while len(data) < 64:
     chunk = next(dataset)
     if not in_middle:
         data.append(chunk[: args.prompt_len])
@@ -192,7 +195,7 @@ while len(data) < 256:
         in_middle = False
     else:
         in_middle = True
-data = torch.IntTensor(data)
+data = torch.IntTensor(data).to(device)
 
 
 # def ids_for_prompt(prompt):
@@ -221,8 +224,6 @@ def infer(ids, k, warmup):
     # With greedy generation (do_sample=False) we _should_ always get the same results.
     # There is currently a bug in start_pos for batched rotary embeddings that can lead
     # varying results for the same prompt.
-    if local_rank == 0:
-        print("==================")
 
     if speculator:
         result, n_steps, generated_token_time_out = speculative_generate(
@@ -252,7 +253,7 @@ def infer(ids, k, warmup):
             # print_result(result[i], ids[i], n_steps)
             total_tokens += len(result[i]) - len(ids[i])
         avg_tokens = total_tokens / len(result)
-        return generated_token_time_out / avg_tokens, avg_tokens
+        return generated_token_time_out / avg_tokens, avg_tokens / n_steps
     return None
 
 
@@ -273,9 +274,9 @@ for bsize in [1, 2, 4]:
     for k in [1, 2, 4, 8, 16, 32]:
         alltimes = 0
         alltokens = 0
-        ntrials = 256 // bsize
+        ntrials = data.size(0) // bsize
         torch.cuda.empty_cache()
-        for i in range(ntrials):
+        for i in tqdm(range(ntrials)):
             inp = data[i * bsize : i * bsize + bsize]
             if i == 0:
                 infer(inp, k, True)
@@ -283,5 +284,5 @@ for bsize in [1, 2, 4]:
             alltimes += t
             alltokens += tok
         print(
-            f"bsize = {bsize}, k = {k}, time = {alltimes/ntrials}, tokens = {alltokens/ntrials}"
+            f"bsize = {bsize}, k = {k}, time = {alltimes/ntrials}, tokens/step = {alltokens/ntrials}"
         )
