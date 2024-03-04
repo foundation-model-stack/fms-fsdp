@@ -104,7 +104,7 @@ def parse_data_args(datas, weights):
         if isinstance(x, str):
             return [item.strip() for item in x.split(",")]
         elif isinstance(x, (list, tuple)):
-            return list(datas)
+            return list(x)
         elif isinstance(x, (int, float, complex)):
             return [x]
         else:
