@@ -97,6 +97,11 @@ parser.add_argument(
     action="store_true",
     help="This is a distributed job (multiple instances run with RANK+WORLD_SIZE)",
 )
+parser.add_argument(
+    "--no_flat",
+    action="store_true",
+    help="Disable batch auto-flattening for handling candidate trees?"
+)
 
 args = parser.parse_args()
 
@@ -180,14 +185,14 @@ dataset = Streaming_Doc_Dataset(
     datasets=[
         args.subdata,
     ],
-    min_length=args.prompt_len,
+    min_length=2148,
     max_chunksize=8192,
 )
 dataset = iter(dataset)
 data = []
 in_middle = False
 print("pulling data to build reusable prompt set")
-while len(data) < 64:
+while len(data) < 256:
     chunk = next(dataset)
     if not in_middle:
         data.append(chunk[: args.prompt_len])
@@ -225,7 +230,7 @@ def infer(ids, k, warmup):
     # There is currently a bug in start_pos for batched rotary embeddings that can lead
     # varying results for the same prompt.
 
-    if speculator:
+    if k != 0:
         result, n_steps, generated_token_time_out = speculative_generate(
             model,
             ids,
@@ -236,6 +241,7 @@ def infer(ids, k, warmup):
             decode_model=decode_model,
             top_k=k,
             threshes=[6, 4, 3],
+            flatting=not args.no_flat,
         )
     else:
         result, n_steps, generated_token_time_out = paged_generate(
@@ -271,7 +277,7 @@ if args.compile:
 
 torch.cuda.empty_cache()
 for bsize in [1, 2, 4]:
-    for k in [1, 2, 4, 8, 16, 32]:
+    for k in [0, 1, 2, 4, 8, 16, 32]:
         alltimes = 0
         alltokens = 0
         ntrials = data.size(0) // bsize
