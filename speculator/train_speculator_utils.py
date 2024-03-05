@@ -153,5 +153,11 @@ def train_speculator(
                 tokens_seen=elapsed_tokens + n_tok,
             )
             torch.cuda.empty_cache()
+    
+    checkpointer.save_single_file(
+        batch_idx,
+        speculator,
+        tokens_seen=elapsed_tokens + n_tok,
+    )
 
     return train_loss
