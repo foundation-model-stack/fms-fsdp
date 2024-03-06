@@ -173,6 +173,7 @@ kv_cache_manager = PagedKVCacheManager(
     tensor_parallel_size=dist.get_world_size() if args.distributed else 1,
     dtype=torch.get_default_dtype(),
     device=device,
+    total_num_gpu_blocks=2000,
 )
 print("cache initialization complete on rank", local_rank)
 
@@ -225,7 +226,7 @@ def print_result(result, inp, n_steps):
     print()
 
 
-def infer(ids, k, warmup):
+def infer(ids, k, warmup, model, decode_model, speculator):
     # With greedy generation (do_sample=False) we _should_ always get the same results.
     # There is currently a bug in start_pos for batched rotary embeddings that can lead
     # varying results for the same prompt.
@@ -263,21 +264,22 @@ def infer(ids, k, warmup):
     return None
 
 
-if args.compile:
-    print("compiling model")
-    # Bug with kv-cache in PT2.1
-    torch._inductor.config.joint_graph_constant_folding = False
-    # compiling can make first inference pass slow
-    decode_model = model
-    decode_model = torch.compile(decode_model, mode=args.compile_mode, fullgraph=True)
-    model = torch.compile(model, fullgraph=True, dynamic=True)
-    if speculator:
-        speculator = torch.compile(speculator, mode=args.compile_mode)
-
-
 torch.cuda.empty_cache()
 for bsize in [1, 2, 4]:
     for k in [0, 1, 2, 4, 8, 16, 32]:
+        if args.compile:
+            print("compiling model")
+            # Bug with kv-cache in PT2.1
+            torch._inductor.config.joint_graph_constant_folding = False
+            # compiling can make first inference pass slow
+            decode_model_ = torch.compile(model, mode=args.compile_mode, fullgraph=True)
+            model_ = torch.compile(model, fullgraph=True, dynamic=True)
+            speculator_ = torch.compile(speculator, mode=args.compile_mode)
+        else:
+            decode_model_ = model
+            model_ = model
+            speculator_ = speculator
+
         alltimes = 0
         alltokens = 0
         ntrials = data.size(0) // bsize
@@ -285,10 +287,11 @@ for bsize in [1, 2, 4]:
         for i in tqdm(range(ntrials)):
             inp = data[i * bsize : i * bsize + bsize]
             if i == 0:
-                infer(inp, k, True)
-            t, tok = infer(inp, k, False)
+                infer(inp, k, True, model_, decode_model_, speculator_)
+            t, tok = infer(inp, k, False, model_, decode_model_, speculator_)
             alltimes += t
             alltokens += tok
         print(
             f"bsize = {bsize}, k = {k}, time = {alltimes/ntrials}, tokens/step = {alltokens/ntrials}"
         )
+        print(len(kv_cache_manager.free_blocks))
