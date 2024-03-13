@@ -147,6 +147,8 @@ def get_policies(cfg, rank):
         sharding_strategy = ShardingStrategy.FULL_SHARD
     elif cfg.sharding_strategy == "hsdp":
         sharding_strategy = ShardingStrategy.HYBRID_SHARD
+    elif cfg.sharding_strategy == "ddp":
+        sharding_strategy = ShardingStrategy.NO_SHARD
     else:
         sharding_strategy = ShardingStrategy.FULL_SHARD
     if rank == 0:
