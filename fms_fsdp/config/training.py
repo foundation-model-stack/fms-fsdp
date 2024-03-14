@@ -34,7 +34,8 @@ class train_config:
     # profiling and logging
     use_profiler: bool = False
     use_wandb: bool = False
-    wandb_dir: str = "/lustre/wandb/"
+    wandb_dir: str = "/lustre/lchu/fms-fsdp"
+    wandb_run_id: str = "aabbccdd"  # give a unique id per job, so wandb can automatically resume
     report_interval: int = 200
     checkpoint_interval: int = 20000
 

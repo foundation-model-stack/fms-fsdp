@@ -33,7 +33,7 @@ def train(
     if cfg.use_wandb:
         if rank == 0:
             print(f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY")
-            wandb.init(project=f"llama-{cfg.model_variant}", dir=cfg.wandb_dir)
+            wandb.init(project=f"llama-{cfg.model_variant}", dir=cfg.wandb_dir, resume="allow", id=cfg.wandb_run_id)
             wandb.config = {"learning_rate": cfg.learning_rate, "steps": cfg.num_steps, "batch_size": cfg.batch_size}
 
     model.train()
