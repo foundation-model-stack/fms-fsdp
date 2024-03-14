@@ -1,5 +1,6 @@
 import os
 
+
 try:
     import packaging.version
 except ImportError:
@@ -10,31 +11,41 @@ from datetime import timedelta
 
 import torch.cuda.nccl as nccl
 import torch.distributed as dist
+import wandb
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
 
-import wandb
-
 
 def train(
-        cfg,
-        model,
-        local_rank,
-        rank,
-        train_loader,
-        optimizer,
-        scheduler,
-        profiler,
-        checkpointer,
-        start_step,
-        n_tok,
+    cfg,
+    model,
+    local_rank,
+    rank,
+    train_loader,
+    optimizer,
+    scheduler,
+    profiler,
+    checkpointer,
+    start_step,
+    n_tok,
 ):
     if cfg.use_wandb:
         if rank == 0:
-            print(f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY")
-            wandb.init(project=f"llama-{cfg.model_variant}", dir=cfg.wandb_dir, resume="allow", id=cfg.wandb_run_id)
-            wandb.config = {"learning_rate": cfg.learning_rate, "steps": cfg.num_steps, "batch_size": cfg.batch_size}
+            print(
+                f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY"
+            )
+            wandb.init(
+                project=f"llama-{cfg.model_variant}",
+                dir=cfg.wandb_dir,
+                resume="allow",
+                id=cfg.wandb_run_id,
+            )
+            wandb.config = {
+                "learning_rate": cfg.learning_rate,
+                "steps": cfg.num_steps,
+                "batch_size": cfg.batch_size,
+            }
 
     model.train()
     ddp_stats = torch.zeros(3).to(local_rank)
@@ -70,7 +81,7 @@ def train(
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             elapsed_tokens = (
-                    (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
+                (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
             if rank == 0:
                 print("step:", batch_idx)
@@ -97,14 +108,17 @@ def train(
                 )
                 print("token per day:", int(elapsed_tokens / elapsed_time * 3600 * 24))
                 if cfg.use_wandb:
-                    wandb.log({
-                        "learning rate": scheduler.get_last_lr()[0],
-                        "loss": train_loss.item(),
-                        "gradient norm": g_norm.item(),
-                        "token seen": n_tok + elapsed_tokens,
-                        "throughput (token per gpu per sec)": int(elapsed_tokens / world_size / elapsed_time),
-                    },
-                        step=batch_idx
+                    wandb.log(
+                        {
+                            "learning rate": scheduler.get_last_lr()[0],
+                            "loss": train_loss.item(),
+                            "gradient norm": g_norm.item(),
+                            "token seen": n_tok + elapsed_tokens,
+                            "throughput (token per gpu per sec)": int(
+                                elapsed_tokens / world_size / elapsed_time
+                            ),
+                        },
+                        step=batch_idx,
                     )
             start = time.time()
             ddp_stats.zero_()
@@ -135,11 +149,11 @@ def get_policies(cfg, rank):
     """Get the policies for mixed precision and fsdp wrapping and sharding strategy"""
 
     verify_bfloat_support = (
-            torch.version.cuda
-            and torch.cuda.is_bf16_supported()
-            and packaging.version.parse(torch.version.cuda).release >= (11, 0)
-            and dist.is_nccl_available()
-            and nccl.version() >= (2, 10)
+        torch.version.cuda
+        and torch.cuda.is_bf16_supported()
+        and packaging.version.parse(torch.version.cuda).release >= (11, 0)
+        and dist.is_nccl_available()
+        and nccl.version() >= (2, 10)
     )
 
     # mixed precision
