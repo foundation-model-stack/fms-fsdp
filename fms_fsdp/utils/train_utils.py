@@ -32,6 +32,7 @@ def train(
 ):
     if cfg.use_wandb:
         if rank == 0:
+            print(f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY")
             wandb.init(project=f"llama-{cfg.model_variant}", dir=cfg.wandb_dir)
             wandb.config = {"learning_rate": cfg.learning_rate, "steps": cfg.num_steps, "batch_size": cfg.batch_size}
 
@@ -81,7 +82,7 @@ def train(
                     (time.time() - start) / cfg.report_interval,
                 )
                 print("overall speed:", elapsed_time / (batch_idx - start_step))
-                print("LR:", scheduler.get_last_lr())
+                print("LR:", scheduler.get_last_lr()[0])
                 print(
                     "reserved memory:",
                     torch.cuda.max_memory_reserved(device=torch.cuda.current_device()),
@@ -97,13 +98,11 @@ def train(
                 print("token per day:", int(elapsed_tokens / elapsed_time * 3600 * 24))
                 if cfg.use_wandb:
                     wandb.log({
-                        "token_seen": n_tok + elapsed_tokens,
+                        "learning rate": scheduler.get_last_lr()[0],
                         "loss": train_loss.item(),
-                        "g_norm": g_norm.item(),
-                        "learning_rate": scheduler.get_last_lr(),
-                        "reserved_mem": torch.cuda.max_memory_reserved(device=torch.cuda.current_device()),
-                        "active_mem": torch.cuda.max_memory_allocated(device=torch.cuda.current_device()),
-                        "token_per_gpu_per_sec": int(elapsed_tokens / world_size / elapsed_time),
+                        "gradient norm": g_norm.item(),
+                        "token seen": n_tok + elapsed_tokens,
+                        "throughput (token per gpu per sec)": int(elapsed_tokens / world_size / elapsed_time),
                     },
                         step=batch_idx
                     )
