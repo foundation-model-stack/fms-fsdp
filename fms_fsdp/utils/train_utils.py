@@ -1,6 +1,5 @@
 import os
 
-
 try:
     import packaging.version
 except ImportError:
@@ -15,20 +14,27 @@ from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
 
+import wandb
+
 
 def train(
-    cfg,
-    model,
-    local_rank,
-    rank,
-    train_loader,
-    optimizer,
-    scheduler,
-    profiler,
-    checkpointer,
-    start_step,
-    n_tok,
+        cfg,
+        model,
+        local_rank,
+        rank,
+        train_loader,
+        optimizer,
+        scheduler,
+        profiler,
+        checkpointer,
+        start_step,
+        n_tok,
 ):
+    if cfg.use_wandb:
+        if rank == 0:
+            wandb.init(project=f"llama-{cfg.model_variant}", dir=cfg.wandb_dir)
+            wandb.config = {"learning_rate": cfg.learning_rate, "steps": cfg.num_steps, "batch_size": cfg.batch_size}
+
     model.train()
     ddp_stats = torch.zeros(3).to(local_rank)
 
@@ -63,7 +69,7 @@ def train(
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             elapsed_tokens = (
-                (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
+                    (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
             if rank == 0:
                 print("step:", batch_idx)
@@ -89,6 +95,18 @@ def train(
                     int(elapsed_tokens / world_size / elapsed_time),
                 )
                 print("token per day:", int(elapsed_tokens / elapsed_time * 3600 * 24))
+                if cfg.use_wandb:
+                    wandb.log({
+                        "token_seen": n_tok + elapsed_tokens,
+                        "loss": train_loss.item(),
+                        "g_norm": g_norm.item(),
+                        "learning_rate": scheduler.get_last_lr(),
+                        "reserved_mem": torch.cuda.max_memory_reserved(device=torch.cuda.current_device()),
+                        "active_mem": torch.cuda.max_memory_allocated(device=torch.cuda.current_device()),
+                        "token_per_gpu_per_sec": int(elapsed_tokens / world_size / elapsed_time),
+                    },
+                        step=batch_idx
+                    )
             start = time.time()
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
@@ -118,11 +136,11 @@ def get_policies(cfg, rank):
     """Get the policies for mixed precision and fsdp wrapping and sharding strategy"""
 
     verify_bfloat_support = (
-        torch.version.cuda
-        and torch.cuda.is_bf16_supported()
-        and packaging.version.parse(torch.version.cuda).release >= (11, 0)
-        and dist.is_nccl_available()
-        and nccl.version() >= (2, 10)
+            torch.version.cuda
+            and torch.cuda.is_bf16_supported()
+            and packaging.version.parse(torch.version.cuda).release >= (11, 0)
+            and dist.is_nccl_available()
+            and nccl.version() >= (2, 10)
     )
 
     # mixed precision
