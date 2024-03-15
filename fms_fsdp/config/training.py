@@ -35,6 +35,7 @@ class train_config:
     use_profiler: bool = False
     use_wandb: bool = False
     wandb_dir: str = "/lustre/lchu/fms-fsdp"
+    wandb_project_name = f"llama-{model_variant}"
     wandb_run_id: str = "aabbccdd"  # give a unique id per job, for resume purpose
     report_interval: int = 200
     checkpoint_interval: int = 20000

@@ -42,7 +42,7 @@ def train(
                 f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY"
             )
             wandb.init(
-                project=f"llama-{cfg.model_variant}",
+                project=cfg.wandb_project_name,
                 dir=cfg.wandb_dir,
                 resume="allow",
                 id=cfg.wandb_run_id,
@@ -95,6 +95,12 @@ def train(
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
                 overall_throughput = int(new_tokens_seen / world_size / elapsed_time)
+                reserved_mem = torch.cuda.max_memory_reserved(
+                    device=torch.cuda.current_device()
+                )
+                allocated_mem = torch.cuda.max_memory_allocated(
+                    device=torch.cuda.current_device()
+                )
 
                 print("step:", batch_idx)
                 print("tokens seen:", total_tokens_seen)
@@ -106,14 +112,8 @@ def train(
                 )
                 print("overall speed:", elapsed_time / (batch_idx - start_step))
                 print("LR:", current_lr)
-                print(
-                    "reserved memory:",
-                    torch.cuda.max_memory_reserved(device=torch.cuda.current_device()),
-                )
-                print(
-                    "active memory:",
-                    torch.cuda.max_memory_allocated(device=torch.cuda.current_device()),
-                )
+                print("reserved memory:", reserved_mem)
+                print("allocated memory:", allocated_mem)
                 print("overall token per gpu per sec:", overall_throughput)
                 print("token per day:", int(new_tokens_seen / elapsed_time * 3600 * 24))
                 if cfg.use_wandb:
@@ -124,6 +124,8 @@ def train(
                             "gradient norm": current_gnorm,
                             "token seen": total_tokens_seen,
                             "throughput (token per gpu per sec)": overall_throughput,
+                            "gpu reserved memory": reserved_mem,
+                            "gpu allocated memory": allocated_mem,
                         },
                         step=batch_idx,
                     )
