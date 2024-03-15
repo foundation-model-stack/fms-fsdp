@@ -11,7 +11,6 @@ from datetime import timedelta
 
 import torch.cuda.nccl as nccl
 import torch.distributed as dist
-import wandb
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
@@ -31,6 +30,13 @@ def train(
     n_tok,
 ):
     if cfg.use_wandb:
+        try:
+            import wandb
+        except ImportError:
+            raise ImportError(
+                "use_wandb is set to True but wandb is not installed. Please install wandb to use wandb support."
+            )
+
         if rank == 0:
             print(
                 f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY"
