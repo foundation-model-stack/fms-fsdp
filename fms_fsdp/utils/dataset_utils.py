@@ -476,6 +476,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         assert max_chunksize > 0, f"Max chunksize must be a nonzero positive integer"
         self.chunksize = max_chunksize
         self.delimiter = delimiter_token
+        self.verbose = verbose
         self.docset = []  # map of doc indices to (dataset, shardid, docid)
         self.fileset = []
         self.datasets = (
@@ -623,7 +624,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         If new filepath does not match the current one, open a new reader on that filepath (pull file on demand)
         """
         if newpath != path:
-            logging.info(f"Worker {self.rank} opening new file {newpath}")
+            if self.verbose:
+                logging.info(f"Worker {self.rank} opening new file {newpath}")
             reader = pa.ipc.open_file(newpath)
             path = newpath
         return path, reader
