@@ -12,3 +12,6 @@ mypy-extensions==1.0.0
 pyarrow-stubs==10.0.1.7
 types-requests==2.31.0.20240125
 types-setuptools==69.0.0.20240125
+
+# Local import libraries that we don't want to put in global requirements.txt
+wandb==0.16.4
