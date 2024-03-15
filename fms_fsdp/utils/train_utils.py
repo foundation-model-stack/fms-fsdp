@@ -27,7 +27,7 @@ def train(
     profiler,
     checkpointer,
     start_step,
-    n_tok,
+    tokens_seen,
 ):
     if cfg.use_wandb:
         try:
@@ -86,18 +86,18 @@ def train(
             g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
-            elapsed_tokens = (
+            new_tokens_seen = (
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
             if rank == 0:
-                seen_token = n_tok + elapsed_tokens
+                total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
-                overall_throughput = int(elapsed_tokens / world_size / elapsed_time)
+                overall_throughput = int(new_tokens_seen / world_size / elapsed_time)
 
                 print("step:", batch_idx)
-                print("tokens seen:", seen_token)
+                print("tokens seen:", total_tokens_seen)
                 print("loss:", current_loss)
                 print("gradient norm:", current_gnorm)
                 print(
@@ -115,14 +115,14 @@ def train(
                     torch.cuda.max_memory_allocated(device=torch.cuda.current_device()),
                 )
                 print("overall token per gpu per sec:", overall_throughput)
-                print("token per day:", int(elapsed_tokens / elapsed_time * 3600 * 24))
+                print("token per day:", int(new_tokens_seen / elapsed_time * 3600 * 24))
                 if cfg.use_wandb:
                     wandb.log(
                         {
                             "learning rate": current_lr,
                             "loss": current_loss,
                             "gradient norm": current_gnorm,
-                            "token seen": seen_token,
+                            "token seen": total_tokens_seen,
                             "throughput (token per gpu per sec)": overall_throughput,
                         },
                         step=batch_idx,
@@ -137,7 +137,7 @@ def train(
                 model,
                 optimizer,
                 train_loader,
-                tokens_seen=elapsed_tokens + n_tok,
+                tokens_seen=tokens_seen + new_tokens_seen,
             )
 
     return train_loss
