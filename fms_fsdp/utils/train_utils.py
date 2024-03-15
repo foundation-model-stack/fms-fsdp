@@ -27,8 +27,32 @@ def train(
     profiler,
     checkpointer,
     start_step,
-    n_tok,
+    tokens_seen,
 ):
+    if cfg.use_wandb:
+        try:
+            import wandb
+        except ImportError:
+            raise ImportError(
+                "use_wandb is set to True but wandb is not installed. Please install wandb to use wandb support."
+            )
+
+        if rank == 0:
+            print(
+                f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY"
+            )
+            wandb.init(
+                project=f"llama-{cfg.model_variant}",
+                dir=cfg.wandb_dir,
+                resume="allow",
+                id=cfg.wandb_run_id,
+            )
+            wandb.config = {
+                "learning_rate": cfg.learning_rate,
+                "steps": cfg.num_steps,
+                "batch_size": cfg.batch_size,
+            }
+
     model.train()
     ddp_stats = torch.zeros(3).to(local_rank)
 
@@ -62,20 +86,26 @@ def train(
             g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
-            elapsed_tokens = (
+            new_tokens_seen = (
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
             if rank == 0:
+                total_tokens_seen = tokens_seen + new_tokens_seen
+                current_loss = train_loss.item()
+                current_lr = scheduler.get_last_lr()[0]
+                current_gnorm = g_norm.item()
+                overall_throughput = int(new_tokens_seen / world_size / elapsed_time)
+
                 print("step:", batch_idx)
-                print("tokens seen:", n_tok + elapsed_tokens)
-                print("loss:", train_loss.item())
-                print("gradient norm:", g_norm.item())
+                print("tokens seen:", total_tokens_seen)
+                print("loss:", current_loss)
+                print("gradient norm:", current_gnorm)
                 print(
                     f"speed for these {cfg.report_interval} steps:",
                     (time.time() - start) / cfg.report_interval,
                 )
                 print("overall speed:", elapsed_time / (batch_idx - start_step))
-                print("LR:", scheduler.get_last_lr())
+                print("LR:", current_lr)
                 print(
                     "reserved memory:",
                     torch.cuda.max_memory_reserved(device=torch.cuda.current_device()),
@@ -84,11 +114,19 @@ def train(
                     "active memory:",
                     torch.cuda.max_memory_allocated(device=torch.cuda.current_device()),
                 )
-                print(
-                    "overall token per gpu per sec:",
-                    int(elapsed_tokens / world_size / elapsed_time),
-                )
-                print("token per day:", int(elapsed_tokens / elapsed_time * 3600 * 24))
+                print("overall token per gpu per sec:", overall_throughput)
+                print("token per day:", int(new_tokens_seen / elapsed_time * 3600 * 24))
+                if cfg.use_wandb:
+                    wandb.log(
+                        {
+                            "learning rate": current_lr,
+                            "loss": current_loss,
+                            "gradient norm": current_gnorm,
+                            "token seen": total_tokens_seen,
+                            "throughput (token per gpu per sec)": overall_throughput,
+                        },
+                        step=batch_idx,
+                    )
             start = time.time()
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
@@ -99,7 +137,7 @@ def train(
                 model,
                 optimizer,
                 train_loader,
-                tokens_seen=elapsed_tokens + n_tok,
+                tokens_seen=tokens_seen + new_tokens_seen,
             )
 
     return train_loss
