@@ -90,16 +90,22 @@ def train(
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
             if rank == 0:
+                seen_token = n_tok + elapsed_tokens
+                current_loss = train_loss.item()
+                current_lr = scheduler.get_last_lr()[0]
+                current_gnorm = g_norm.item()
+                overall_throughput = int(elapsed_tokens / world_size / elapsed_time)
+
                 print("step:", batch_idx)
-                print("tokens seen:", n_tok + elapsed_tokens)
-                print("loss:", train_loss.item())
-                print("gradient norm:", g_norm.item())
+                print("tokens seen:", seen_token)
+                print("loss:", current_loss)
+                print("gradient norm:", current_gnorm)
                 print(
                     f"speed for these {cfg.report_interval} steps:",
                     (time.time() - start) / cfg.report_interval,
                 )
                 print("overall speed:", elapsed_time / (batch_idx - start_step))
-                print("LR:", scheduler.get_last_lr()[0])
+                print("LR:", current_lr)
                 print(
                     "reserved memory:",
                     torch.cuda.max_memory_reserved(device=torch.cuda.current_device()),
@@ -108,21 +114,16 @@ def train(
                     "active memory:",
                     torch.cuda.max_memory_allocated(device=torch.cuda.current_device()),
                 )
-                print(
-                    "overall token per gpu per sec:",
-                    int(elapsed_tokens / world_size / elapsed_time),
-                )
+                print("overall token per gpu per sec:", overall_throughput)
                 print("token per day:", int(elapsed_tokens / elapsed_time * 3600 * 24))
                 if cfg.use_wandb:
                     wandb.log(
                         {
-                            "learning rate": scheduler.get_last_lr()[0],
-                            "loss": train_loss.item(),
-                            "gradient norm": g_norm.item(),
-                            "token seen": n_tok + elapsed_tokens,
-                            "throughput (token per gpu per sec)": int(
-                                elapsed_tokens / world_size / elapsed_time
-                            ),
+                            "learning rate": current_lr,
+                            "loss": current_loss,
+                            "gradient norm": current_gnorm,
+                            "token seen": seen_token,
+                            "throughput (token per gpu per sec)": overall_throughput,
                         },
                         step=batch_idx,
                     )
