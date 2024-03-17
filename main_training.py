@@ -94,6 +94,8 @@ def main(**kwargs):
             else None
         ),
     )
+    model.rot_emb.compute_freqs_cis(torch.device("cuda", torch.cuda.current_device()),
+                                    model.config.max_expected_seq_len)
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
