@@ -94,8 +94,6 @@ def main(**kwargs):
             else None
         ),
     )
-    model.rot_emb.compute_freqs_cis(torch.device("cuda", torch.cuda.current_device()),
-                                    model.config.max_expected_seq_len)
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
@@ -107,12 +105,8 @@ def main(**kwargs):
     if cfg.use_torch_compile:
         if rank == 0:
             print(f"--> enabling torch compile...")
-            if cfg.fsdp_activation_checkpointing:
-                raise ValueError(
-                    "Compile does not yet work well with llama+ac, please"
-                    "either use it without activation checkpointing, or disable"
-                    "compile."
-                )
+        model.rot_emb.compute_freqs_cis(torch.device("cuda", torch.cuda.current_device()),
+                                        model.config.max_expected_seq_len)
         model = torch.compile(model)
 
     # Optimizer
