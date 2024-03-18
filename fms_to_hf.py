@@ -19,10 +19,8 @@ def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
             num_attention_heads=hf_config.nheads,
             num_key_value_heads=None if hf_config.kvheads == 0 else hf_config.kvheads,
             num_hidden_layers=hf_config.nlayers,
-            intermediate_size=hf_config.multiple_of
-            * round(
-                int(hf_config.hidden_size * hf_config.hidden_grow_factor)
-                / hf_config.multiple_of
+            intermediate_size=hf_config.multiple_of * (
+                (hf_config.hidden_size + hf_config.multiple_of - 1) // hf_config.multiple_of
             ),
             pad_token_id=(
                 None if hf_config.pad_token_id == -1 else hf_config.pad_token_id
