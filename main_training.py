@@ -94,6 +94,11 @@ def main(**kwargs):
             else None
         ),
     )
+    # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
+    model.rot_emb.compute_freqs_cis(
+        torch.device("cuda", torch.cuda.current_device()),
+        model.config.max_expected_seq_len,
+    )
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
@@ -105,12 +110,8 @@ def main(**kwargs):
     if cfg.use_torch_compile:
         if rank == 0:
             print(f"--> enabling torch compile...")
-            if cfg.fsdp_activation_checkpointing:
-                raise ValueError(
-                    "Compile does not yet work well with llama+ac, please"
-                    "either use it without activation checkpointing, or disable"
-                    "compile."
-                )
+        # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
+        torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
 
     # Optimizer
