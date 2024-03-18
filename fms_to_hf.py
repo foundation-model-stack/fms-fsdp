@@ -21,7 +21,11 @@ def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
             num_hidden_layers=hf_config.nlayers,
             intermediate_size=hf_config.multiple_of
             * (
-                (hf_config.hidden_size + hf_config.multiple_of - 1)
+                (
+                    int(hf_config.hidden_grow_factor * hf_config.hidden_size)
+                    + hf_config.multiple_of
+                    - 1
+                )
                 // hf_config.multiple_of
             ),
             pad_token_id=(
