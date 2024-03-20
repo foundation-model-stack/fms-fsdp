@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -42,7 +43,7 @@ class train_config:
     use_aim: bool = False
     aim_dir: str = "/lustre/lchu/fms-fsdp"
     aim_project_name: str = "llama"  # project name for a group of runs
-    aim_run_id: str = None  # give a unique id per run, for job resume purpose
+    aim_run_id: Optional[str] = None  # give a unique id per run, for job resume purpose
 
     # compile
     use_torch_compile: bool = False
