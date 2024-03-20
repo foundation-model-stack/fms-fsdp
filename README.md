@@ -9,21 +9,23 @@ For an end-to-end framework, we would recommend the reader to [OLMo](https://git
 ## Training throughput benchmarks
 We benchmark the best possible throughput and the strategies we employ in the below table and share the throughput obtained on 128 A100 GPUs as well as 96 H100 GPUs, we use the exact same scripts and configurations for these GPUs.
 
-| Model Size | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> A100 80G 128 GPUs <br/> tokens/sec/GPU | Training throughput <br/> H100 96 GPUs <br/> tokens/sec/GPU |
-|------------|-------------------|--------------------------|------------|------------------------------------------------------------------|-------------------------------------------------------------|
-| 7b         | HSDP              | No AC                    | 2          | 3650                                                             | 7500                                                        |
-| 13b        | FSDP              | Selective AC             | 2          | 1800                                                             | 3800                                                        |
-| 34b        | FSDP              | Full AC                  | 2          | 700                                                              | 1550                                                        |  
-| 70b        | FSDP              | Full AC                  | 2          | 370                                                              | 800                                                         |
+| Model Size | Sharding Strategy | Activation Checkpointing | Batch Size | Training Throughput <br/> tokens/sec/GPU <br/> A100 80G 128 GPUs with 400Gbps | Training throughput <br/> tokens/sec/GPU <br/> H100 96 GPUs with 800 Gbps |
+|------------|-------------------|--------------------------|------------|-------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| 7b         | HSDP              | No AC                    | 2          | 3700                                                                          | 7500                                                                      |
+| 13b        | FSDP              | Selective AC             | 2          | 1800                                                                          | 3800                                                                      |
+| 34b        | FSDP              | Full AC                  | 2          | 700                                                                           | 1550                                                                      |  
+| 70b        | FSDP              | Full AC                  | 2          | 370                                                                           | 800                                                                       |
 
-We also compute the MFU numbers for each of the above configuration. We use the PyTorch [FLOP counter]() to compute the FLOPS and a theoretical maximum of 312TFLOPS for `bf16` operations on A100 GPUs and 989TFLOPS for H100 GPUs. We cross verify the FLOP counter output with that of math based computation, the latter following the approach outlined in the MegatronLM paper and notice that they are within 2% for the 7B model (384TFLOPS using FLOP counter and 377 using the math formulae. Note that we made changes to the math in the paper to account for lack of activation checkpointing. The MFU numbers are summarized in the below table.
+HFU numbers are computed using the [PyTorch FLOP counter](https://github.com/pytorch/pytorch/blob/2240018c03744ee34ea14ad53481db934c37e384/torch/utils/flop_counter.py#L336) and the theoretical bf16 performance of
+A100 and H100 GPUs, whereas MFU numbers are computed using the methodology outlined in
+[NanoGPT](https://github.com/karpathy/nanoGPT) and the [PaLM](https://arxiv.org/pdf/2204.02311.pdf) paper.
 
-| Model Size | Batch size | MFU (A100 80G) | MFU (H100 80G) |
-|------------|------------|----------------|----------------|
-| 7B         | 2          | 0.57           | 0.37           |
-| 13B        | 2          | 0.59           | 0.40           |
-| 34B        | 2          | 0.64           | 0.44           |
-| 70B        | 2          | 0.67           | 0.45           |
+| Model Size | Batch size | MFU (A100 80G) | HFU (A100 80G) | MFU (H100 80G) | HFU (H100 80G) |
+|------------|------------|----------------|----------------|----------------|----------------|
+| 7B         | 2          | 0.57           | 0.57           | 0.37           | 0.37           |
+| 13B        | 2          | 0.51           | 0.59           | 0.35           | 0.40           |
+| 34B        | 2          | 0.47           | 0.64           | 0.32           | 0.44           |
+| 70B        | 2          | 0.50           | 0.67           | 0.34           | 0.45           |
 
 A few points to note here, on the A100s, we note that for 13B we are not utilizing the hardware as well (only 0.48 MFU) because of smaller batch size. We can dial up the MFU by turning on activation checkpointing, however the throughput falls to 1600 tokens/sec/GPU. Whereas, note that the gaps here are more glaring with H100s where the MFU for 7 and 13B falls below 0.40.
 

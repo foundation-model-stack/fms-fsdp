@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# On AWS, the EFA and OFI paths enable NCCL to use optimized networking.
 export LD_LIBRARY_PATH=/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/amazon/openmpi/lib:/opt/aws-ofi-nccl/lib:/usr/local/cuda/lib:/usr/local/cuda/lib64:/usr/local/cuda:/usr/local/cuda/targets/x86_64-linux/lib/:/usr/local/cuda/extras/CUPTI/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 
 export FI_EFA_SET_CUDA_SYNC_MEMOPS=0
@@ -28,3 +29,4 @@ torchrun \
     --master_port="12234" \
     main_training.py \
     ${MODEL_ARGS}
+

@@ -117,3 +117,20 @@ def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
         data = Preprocess_Dataset(data, p)
 
     return torch.utils.data.DataLoader(data, num_workers=0, batch_size=cfg.batch_size)
+
+
+def parse_data_args(datas, weights):
+    # Convert csv inputs into corresponding lists of values
+    def splitstrip(x):
+        if isinstance(x, str):
+            return [item.strip() for item in x.split(",")]
+        elif isinstance(x, (list, tuple)):
+            return list(x)
+        elif isinstance(x, (int, float, complex)):
+            return [x]
+        else:
+            raise ValueError(f"arg input {x} cannot be parsed.")
+
+    datas = splitstrip(datas)
+    weights = [float(x) for x in splitstrip(weights)]
+    return datas, weights

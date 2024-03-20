@@ -31,8 +31,12 @@ class train_config:
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
 
-    # profiling and reporting
+    # profiling and logging
     use_profiler: bool = False
+    use_wandb: bool = False
+    wandb_dir: str = "/lustre/lchu/fms-fsdp"
+    wandb_project_name = f"llama-{model_variant}"
+    wandb_run_id: str = "aabbccdd"  # give a unique id per job, for resume purpose
     report_interval: int = 200
     checkpoint_interval: int = 20000
 
