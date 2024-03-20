@@ -54,7 +54,7 @@ def train(
 
     if cfg.use_aim:
         try:
-            from aim import Run
+            from aim import Run  # type: ignore
         except ImportError:
             raise ImportError(
                 "use_aim is set to True but aim is not installed. Please install aim to use aim support."
