@@ -32,13 +32,19 @@ class train_config:
     grad_clip_thresh: float = 1.0
 
     # profiling and logging
+    report_interval: int = 200
+    checkpoint_interval: int = 20000
     use_profiler: bool = False
     use_wandb: bool = False
     wandb_dir: str = "/lustre/lchu/fms-fsdp"
-    wandb_project_name = f"llama-{model_variant}"
-    wandb_run_id: str = "aabbccdd"  # give a unique id per job, for resume purpose
-    report_interval: int = 200
-    checkpoint_interval: int = 20000
+    wandb_project_name: str = (
+        f"llama-{model_variant}"  # project name for a group of runs
+    )
+    wandb_run_id: str = "aabbccdd"  # give a unique id per run, for job resume purpose
+    use_aim: bool = False
+    aim_dir: str = "/lustre/lchu/fms-fsdp"
+    aim_project_name: str = f"llama-{model_variant}"  # project name for a group of runs
+    aim_run_id: str = None  # give a unique id per run, for job resume purpose
 
     # compile
     use_torch_compile: bool = False

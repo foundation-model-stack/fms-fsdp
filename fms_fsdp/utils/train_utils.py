@@ -36,7 +36,6 @@ def train(
             raise ImportError(
                 "use_wandb is set to True but wandb is not installed. Please install wandb to use wandb support."
             )
-
         if rank == 0:
             print(
                 f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY"
@@ -49,7 +48,27 @@ def train(
             )
             wandb.config = {
                 "learning_rate": cfg.learning_rate,
-                "steps": cfg.num_steps,
+                "num_steps": cfg.num_steps,
+                "batch_size": cfg.batch_size,
+            }
+
+    if cfg.use_aim:
+        try:
+            from aim import Run
+        except ImportError:
+            raise ImportError(
+                "use_aim is set to True but aim is not installed. Please install aim to use aim support."
+            )
+        if rank == 0:
+            print(f"--> aim is enabled!")
+            run = Run(
+                experiment=cfg.aim_project_name,
+                repo=cfg.aim_dir,
+                run_hash=cfg.aim_run_id,
+            )
+            run["hparams"] = {
+                "learning_rate": cfg.learning_rate,
+                "num_steps": cfg.num_steps,
                 "batch_size": cfg.batch_size,
             }
 
@@ -118,6 +137,19 @@ def train(
                 print("token per day:", int(new_tokens_seen / elapsed_time * 3600 * 24))
                 if cfg.use_wandb:
                     wandb.log(
+                        {
+                            "learning rate": current_lr,
+                            "loss": current_loss,
+                            "gradient norm": current_gnorm,
+                            "token seen": total_tokens_seen,
+                            "throughput (token per gpu per sec)": overall_throughput,
+                            "gpu reserved memory": reserved_mem,
+                            "gpu allocated memory": allocated_mem,
+                        },
+                        step=batch_idx,
+                    )
+                if cfg.use_aim:
+                    run.track(
                         {
                             "learning rate": current_lr,
                             "loss": current_loss,

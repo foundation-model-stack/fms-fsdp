@@ -15,3 +15,4 @@ types-setuptools==69.0.0.20240125
 
 # Local import libraries that we don't want to put in global requirements.txt
 wandb==0.16.4
+aim==3.19.1
