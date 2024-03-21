@@ -14,16 +14,17 @@ non_reentrant_wrapper = partial(
 )
 
 
-def apply_fsdp_checkpointing(model, every_xth_item):
+def apply_fsdp_checkpointing(model, selectivity):
+    block_idx = 0
+    m, n = selectivity
+
     def selective_checkpointing(submodule):
-        selective_checkpointing.__dict__.setdefault("_count", 0)
+        nonlocal block_idx
 
         if isinstance(submodule, LLaMABlock):
-            selective_checkpointing._count += 1
-            if (
-                not every_xth_item
-                or selective_checkpointing._count % every_xth_item == 0
-            ):
+            current_block_idx = block_idx
+            block_idx += 1
+            if current_block_idx % n in range(m):
                 return True
         return False
 

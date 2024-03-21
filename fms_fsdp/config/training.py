@@ -20,7 +20,7 @@ class train_config:
     # fsdp policies
     mixed_precision: bool = True
     fsdp_activation_checkpointing: bool = False
-    selective_checkpointing: int = 1
+    selective_checkpointing: tuple[int, int] = (1, 1)  # ac m blocks every n blocks
     sharding_strategy: str = "hsdp"
     low_cpu_fsdp: bool = False
 
