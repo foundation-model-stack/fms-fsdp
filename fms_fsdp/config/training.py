@@ -33,6 +33,7 @@ class train_config:
 
     # profiling and logging
     use_profiler: bool = False
+    profiler_rank0_only: bool = True
     use_wandb: bool = False
     wandb_dir: str = "/lustre/lchu/fms-fsdp"
     wandb_project_name = f"llama-{model_variant}"

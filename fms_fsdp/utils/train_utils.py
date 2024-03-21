@@ -78,7 +78,11 @@ def train(
         ddp_stats[2] += 1
 
         if profiler:
-            profiler.step()
+            if cfg.profiler_rank0_only:
+                if rank == 0:
+                    profiler.step()
+            else:
+                profiler.step()
 
         if batch_idx % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
