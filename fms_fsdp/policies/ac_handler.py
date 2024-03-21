@@ -15,6 +15,19 @@ non_reentrant_wrapper = partial(
 
 
 def apply_fsdp_checkpointing(model, selectivity):
+    """
+    Apply selective activation checkpointing.
+    selectivity is defined as a tuple of (m, n), which means we apply ac
+    on m blocks every n blocks.
+    e.g.
+    selectivity = (2, 3) means [ac, ac, no-ac, ac, ac, no-ac, ...]
+    Since blocks are homogeneous, we want to further balance the ac by
+    making m evenly spaced inside n.
+    e.g. with selectivity = (2, 5), we want
+    [no-ac, ac, no-ac, ac, no-ac], ...
+    rather than
+    [ac, ac, no-ac, no-ac, no-ac], ...
+    """
     block_idx = 0
     m, n = selectivity
 
@@ -24,7 +37,7 @@ def apply_fsdp_checkpointing(model, selectivity):
         if isinstance(submodule, LLaMABlock):
             current_block_idx = block_idx
             block_idx += 1
-            if current_block_idx % n in range(m):
+            if current_block_idx % n in [i * n // m + n // (2 * m) for i in range(m)]:
                 return True
         return False
 
