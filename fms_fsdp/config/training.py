@@ -20,7 +20,7 @@ class train_config:
     # fsdp policies
     mixed_precision: bool = True
     fsdp_activation_checkpointing: bool = False
-    selective_checkpointing: float = 1  # percentage of blocks to apply ac
+    selective_checkpointing: float | str = 1  # percentage of blocks to apply ac
     sharding_strategy: str = "hsdp"
     low_cpu_fsdp: bool = False
 
