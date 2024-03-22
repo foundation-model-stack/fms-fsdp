@@ -14,30 +14,32 @@ non_reentrant_wrapper = partial(
 )
 
 
-def apply_fsdp_checkpointing(model, selectivity):
+def apply_fsdp_checkpointing(model, p):
     """
     Apply selective activation checkpointing.
-    selectivity is defined as a tuple of (m, n), which means we apply ac
-    on m blocks every n blocks.
-    e.g.
-    selectivity = (2, 3) means [ac, ac, no-ac, ac, ac, no-ac, ...]
-    Since blocks are homogeneous, we want to further balance the ac by
-    making m evenly spaced inside n.
-    e.g. with selectivity = (2, 5), we want
-    [no-ac, ac, no-ac, ac, no-ac], ...
-    rather than
-    [ac, ac, no-ac, no-ac, no-ac], ...
+    Selectivity is defined as a percentage p, which means we apply ac
+    on p of the total blocks. p is a floating number in the range of
+    [0, 1].
+    Some examples:
+    p = 0: no ac for all blocks. same as `fsdp_activation_checkpointing=False`
+    p = 1: apply ac on every block. i.e. "full ac".
+    p = 1/2: [ac, no-ac, ac, no-ac, ...]
+    p = 1/3: [no-ac, ac, no-ac,   no-ac, ac, no-ac,   ...]
+    p = 2/3: [ac, no-ac, ac,    ac, no-ac, ac,    ...]
+    Since blocks are homogeneous, we make ac blocks evenly spaced among
+    all blocks.
     """
     block_idx = 0
-    m, n = selectivity
+    cut_off = 1 / 2
 
     def selective_checkpointing(submodule):
         nonlocal block_idx
+        nonlocal cut_off
 
         if isinstance(submodule, LLaMABlock):
-            current_block_idx = block_idx
             block_idx += 1
-            if current_block_idx % n in [i * n // m + n // (2 * m) for i in range(m)]:
+            if block_idx * p >= cut_off:
+                cut_off += 1
                 return True
         return False
 
