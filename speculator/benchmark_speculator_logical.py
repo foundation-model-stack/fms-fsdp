@@ -29,7 +29,7 @@ parser.add_argument(
     "--architecture",
     type=str,
     default="paged_llama",
-    help="The model architecture to benchmark",
+    help="The model architecture to benchmark, e.g. 'paged_llama', 'paged_gpt_bigcode',
 )
 parser.add_argument(
     "--variant",
