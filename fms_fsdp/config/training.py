@@ -32,10 +32,10 @@ class train_config:
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
 
-    # profiling 
+    # profiling
     use_profiler: bool = False
     profiler_rank0_only: bool = True
-      
+
     # logging
     report_interval: int = 200
     checkpoint_interval: int = 20000
