@@ -219,19 +219,19 @@ def get_policies(cfg, rank):
     return mixed_precision_policy, wrapping_policy, sharding_strategy
 
 
-def get_profiler(cfg):
-    if cfg.use_profiler:
-        profiler = torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ],
-            schedule=torch.profiler.schedule(wait=1, warmup=2, active=3, repeat=1),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler("profile_traces"),
-            profile_memory=True,
-            with_stack=False,
-            record_shapes=True,
-        )
-    else:
-        profiler = None
-    return profiler
+def get_profiler(cfg, rank):
+    if not cfg.use_profiler:
+        return
+    if cfg.profiler_rank0_only and rank != 0:
+        return
+    return torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
+        schedule=torch.profiler.schedule(wait=1, warmup=2, active=3, repeat=1),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler("profile_traces"),
+        profile_memory=True,
+        with_stack=False,
+        record_shapes=True,
+    )

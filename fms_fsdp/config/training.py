@@ -32,10 +32,13 @@ class train_config:
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
 
-    # profiling and logging
+    # profiling 
+    use_profiler: bool = False
+    profiler_rank0_only: bool = True
+      
+    # logging
     report_interval: int = 200
     checkpoint_interval: int = 20000
-    use_profiler: bool = False
     tracker: Optional[str] = None  # None, "wandb", "aim"
     tracker_dir: str = "/lustre/lchu/fms-fsdp"
     tracker_project_name: str = "llama"  # project name for a group of runs
