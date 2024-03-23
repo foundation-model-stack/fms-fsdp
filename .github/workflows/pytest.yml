@@ -48,6 +48,9 @@ jobs:
         # Use -I to ignore the existing install and actually install
         # the version on main
         pip install -I ibm-fms@git+https://github.com/foundation-model-stack/foundation-model-stack@main
+        
+        # Install fms-fsdp project
+        pip install -e .
 
         # No type stubs available for "fire" and "transformers"
         pytest tests/
