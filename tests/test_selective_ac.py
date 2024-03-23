@@ -14,6 +14,11 @@ def test_selective_ac(narrow_model_factory):
     assert [isinstance(block, CheckpointWrapper) for block in model.layers] == expected
 
     model = narrow_model_factory.create()
+    apply_fsdp_checkpointing(model, 1 / 100)
+    expected = [False] * 15
+    assert [isinstance(block, CheckpointWrapper) for block in model.layers] == expected
+
+    model = narrow_model_factory.create()
     apply_fsdp_checkpointing(model, 1 / 5)
     expected = [False, False, True, False, False] * 3
     assert [isinstance(block, CheckpointWrapper) for block in model.layers] == expected
@@ -41,4 +46,14 @@ def test_selective_ac(narrow_model_factory):
     model = narrow_model_factory.create()
     apply_fsdp_checkpointing(model, 1)
     expected = [True] * 15
+    assert [isinstance(block, CheckpointWrapper) for block in model.layers] == expected
+
+    model = narrow_model_factory.create()
+    apply_fsdp_checkpointing(model, 5 / 3)
+    expected = [True] * 15
+    assert [isinstance(block, CheckpointWrapper) for block in model.layers] == expected
+
+    model = narrow_model_factory.create()
+    apply_fsdp_checkpointing(model, -1)
+    expected = [False] * 15
     assert [isinstance(block, CheckpointWrapper) for block in model.layers] == expected
