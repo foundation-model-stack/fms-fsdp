@@ -1,5 +1,4 @@
 import pytest
-
 from fms.models.llama import LLaMA, LLaMAConfig
 
 
