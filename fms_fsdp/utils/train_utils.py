@@ -47,15 +47,18 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             if rank == 0:
-                print(
-                    f"--> wandb is enabled! Make sure to pass your wandb api key via WANDB_API_KEY."
-                )
-                wandb.init(
-                    project=project_name,
-                    dir=tracker_dir,
-                    resume="allow",
-                    id=run_id,
-                )
+                print(f"--> wandb is enabled!")
+                try:
+                    wandb.init(
+                        project=project_name,
+                        dir=tracker_dir,
+                        resume="allow",
+                        id=run_id,
+                    )
+                except wandb.errors.UsageError:
+                    raise ValueError(
+                        "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
+                    )
                 wandb.config = hparams
 
         if cfg.tracker == "aim":
