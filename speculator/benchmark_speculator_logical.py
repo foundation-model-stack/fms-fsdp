@@ -20,7 +20,8 @@ from fms_fsdp.utils.dataset_utils import Streaming_Doc_Dataset
 
 # This example script measures the logical speedup of running a speculator atop a base model. Run as:
 # export CUDA_VISIBLE_DEVICES=1
-# torchrun --nproc_per_node=1 benchmark_speculator_logical.py --architecture=paged_llama --variant=7b --model_path=~/models/7B-F --tokenizer=~/models/tokenizer.model --model_source=hf --speculator_path=~/models/speculator_7B_F.pth --compile
+# e.g., #1: torchrun --nproc_per_node=1 benchmark_speculator_logical.py --architecture=paged_llama --variant=7b --model_path=~/models/7B-F --tokenizer=~/models/tokenizer.model --model_source=hf --speculator_path=~/models/speculator_7B_F.pth --compile
+# e.g., #2: torchrun --nproc_per_node=1 benchmark_speculator_logical.py --architecture=paged_gpt_bigcode --variant=ibm.20b --model_path=~/models/granite-20b-instruct --tokenizer=~/models/granite-20b-instruct --model_source=hf --speculator_path=~/models/speculator_granite20B.pth --n_predict=4 --threshes=[6,4,3,3]
 
 parser = argparse.ArgumentParser(
     description="Script to run inference on a causal model"
