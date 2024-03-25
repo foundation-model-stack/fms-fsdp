@@ -18,8 +18,9 @@ from tqdm import tqdm
 from fms_fsdp.utils.dataset_utils import Streaming_Doc_Dataset
 
 
-# This example script validates the LLaMA implementation by running inference on a couple of prompts.
-# torchrun --nproc_per_node=1 scripts/inference.py --variant=7b --model_path=~/models/7B-F --tokenizer=~/models/tokenizer.model --model_source=meta --speculator_path=~/models/speculator_7B_F.pth --compile
+# This example script measures the logical speedup of running a speculator atop a base model. Run as:
+# export CUDA_VISIBLE_DEVICES=1
+# torchrun --nproc_per_node=1 benchmark_speculator_logical.py --architecture=paged_llama --variant=7b --model_path=~/models/7B-F --tokenizer=~/models/tokenizer.model --model_source=hf --speculator_path=~/models/speculator_7B_F.pth --compile
 
 parser = argparse.ArgumentParser(
     description="Script to run inference on a causal model"
