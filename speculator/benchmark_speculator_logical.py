@@ -1,12 +1,12 @@
 import argparse
 import itertools
+import json
 import os
 import time
-import torch
-import json
 
-import fms_extras.models.paged_llama
 import fms_extras.models.paged_gpt_bigcode
+import fms_extras.models.paged_llama
+import torch
 import torch._inductor.config
 from fms.models import get_model
 from fms.utils import generation, tokenizers
@@ -206,6 +206,7 @@ if args.speculator_path is not None:
 print("initializing paged cache")
 # cache setup
 from fms_extras.utils.cache.paged import PagedKVCacheManager
+
 
 use_cache = True
 if hasattr(model.config, "kvheads"):
