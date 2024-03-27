@@ -136,7 +136,7 @@ parser.add_argument(
 parser.add_argument(
     "--threshes",
     type=json.loads,
-    default=[6,4,3],
+    default=[6, 4, 3],
     help="number of top k predictions from each head to generate speculator candidate pool; should be same len as n_predict",
 )
 
