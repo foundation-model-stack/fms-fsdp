@@ -100,7 +100,7 @@ parser.add_argument(
 parser.add_argument(
     "--no_flat",
     action="store_true",
-    help="Disable batch auto-flattening for handling candidate trees?"
+    help="Disable batch auto-flattening for handling candidate trees?",
 )
 
 args = parser.parse_args()
