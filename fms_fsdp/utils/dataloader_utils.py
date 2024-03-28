@@ -1,5 +1,4 @@
 import torch
-from torch.utils.data.distributed import DistributedSampler
 
 from fms_fsdp.utils.dataset_utils import (
     Buffer_Dataset,
@@ -7,8 +6,36 @@ from fms_fsdp.utils.dataset_utils import (
     Preprocess_Dataset,
     Sampling_Dataset,
     Scalable_Shard_Dataset,
-    Streaming_Doc_Dataset,
 )
+
+
+def parse_data_args(datas, weights):
+    # Convert csv inputs into corresponding lists of values
+    def splitstrip(x):
+        if isinstance(x, str):
+            return [item.strip() for item in x.split(",")]
+        elif isinstance(x, (list, tuple)):
+            return list(x)
+        elif isinstance(x, (int, float, complex)):
+            return [x]
+        else:
+            raise ValueError(f"arg input {x} cannot be parsed.")
+
+    datas = splitstrip(datas)
+    weights = [float(x) for x in splitstrip(weights)]
+    return datas, weights
+
+
+def causal_lm(data_seq, prompt_len=1):
+    """
+    Perform causal language modeling by right-shifting the input sequence.
+    Sets first prompt_len tokens to be ignored by the loss.
+    Expects tensor inputs.
+    """
+    t = data_seq.clone()[1:]
+    data_seq = data_seq[:-1]
+    t[:prompt_len] = -100
+    return data_seq, t
 
 
 def get_dummy_loader(cfg, rank, world_size):
@@ -39,9 +66,9 @@ def get_dummy_loader(cfg, rank, world_size):
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
-def get_data_loader(cfg, rank, world_size):
+def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     """
-    Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training
+    Pytorch dataloader for stateful, distributed, and rescalable training
     ...
     Args
     ----
@@ -51,20 +78,12 @@ def get_data_loader(cfg, rank, world_size):
         Rank of current distributed worker. Used for handling dataset sharding logic.
     world_size : int
         Number of distributed workers. Used for handling dataset sharding logic.
+    postprocess : List[Callable]
+        Any task-specific postprocessing to apply before handing over data. Steps will apply in
+        the order provided by the user. For CLM training, use postprocess=[causal_lm].
     """
 
     datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
-
-    def causal_lm(data_seq, prompt_len=1):
-        """
-        Perform causal language modeling by right-shifting the input sequence.
-        Sets first prompt_len tokens to be ignored by the loss.
-        """
-        data_seq = torch.IntTensor(data_seq)
-        t = data_seq.clone()[1:]
-        data_seq = data_seq[:-1]
-        t[:prompt_len] = -100
-        return data_seq, t
 
     # Base streaming dataset. Returns doc chunks in sequence.
     # Implements dataset sampling and rescalability.
@@ -86,14 +105,16 @@ def get_data_loader(cfg, rank, world_size):
     # Wrap above dataset in packing logic to form constant-length lines.
     data = Buffer_Dataset(
         data,
-        cfg.seq_length + 1,
+        cfg.seq_length if causal_lm not in postprocess else cfg.seq_length + 1,
         drop_final_token=cfg.sep_token,
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
     data = Preload_Buffer_Dataset(data, 10000)
-    # Split line into input and target for the CLM task.
-    data = Preprocess_Dataset(data, causal_lm)
+    # Apply desired postprocessing steps in sequence
+    data = Preprocess_Dataset(data, torch.IntTensor)
+    for p in postprocess:
+        data = Preprocess_Dataset(data, p)
 
     return torch.utils.data.DataLoader(data, num_workers=0, batch_size=cfg.batch_size)
 
