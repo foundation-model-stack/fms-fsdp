@@ -180,8 +180,9 @@ def setup_environ_flags():
 
 
 def get_policies(cfg, rank):
-    """Get the policies for mixed precision and fsdp wrapping and sharding strategy"""
+    """Get policies for mixed precision, FSDP wrapping, sharding strategy and param init function."""
 
+    # mixed precision
     verify_bfloat_support = (
         torch.version.cuda
         and torch.cuda.is_bf16_supported()
@@ -189,8 +190,6 @@ def get_policies(cfg, rank):
         and dist.is_nccl_available()
         and nccl.version() >= (2, 10)
     )
-
-    # mixed precision
     if cfg.mixed_precision:
         bf16_ready = verify_bfloat_support
         if bf16_ready:
@@ -219,7 +218,13 @@ def get_policies(cfg, rank):
     if rank == 0:
         print(f"Sharding strategy = {cfg.sharding_strategy}")
 
-    return mixed_precision_policy, wrapping_policy, sharding_strategy
+    # param init function
+    if cfg.low_cpu_fsdp:
+        param_init_fn = param_init_function
+    else:
+        param_init_fn = None
+
+    return mixed_precision_policy, wrapping_policy, sharding_strategy, param_init_fn
 
 
 def get_profiler(cfg, rank):
