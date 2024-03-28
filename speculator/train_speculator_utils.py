@@ -1,10 +1,107 @@
 import os
 import time
+from typing import Any, Callable, MutableMapping, Optional, Tuple, Union
 
 import torch
 import torch.distributed as dist
-from fms.utils.generation import generate
+import torch.nn.functional as F
+from fms.models.gpt_bigcode import GPTBigCode
+from fms.models.llama import LLaMA
+from fms.utils.generation import _make_cache_contiguous
 from torch.nn import CrossEntropyLoss
+
+
+def generate(
+    model: Union[Callable, torch.nn.Module],
+    input_ids: torch.Tensor,
+    max_seq_len: int = 2048,
+    max_new_tokens: int = 256,
+    temperature: float = 1.0,
+    top_k: int = 10,
+    do_sample: bool = True,
+    num_beams: int = 1,
+    use_cache: bool = False,
+    contiguous_cache: bool = False,
+    include_embeds: bool = False,
+):
+    """
+    A straightforward copy of the generate method in fms.utils.generation.
+    The only change is the include_embeds flag, which when true also returns
+    the embedding vectors corresponding to the tokens in the output sequence.
+    """
+    batched = False
+    if num_beams != 1:
+        raise NotImplementedError("generate() does yet not support beam search")
+    if type(input_ids) == torch.Tensor:
+        if input_ids.dim() != 1:
+            batched = True
+    else:
+        raise RuntimeError("generate() requires a tensor of token ids as the prefix")
+
+    if not batched:
+        input_ids = input_ids.unsqueeze(0)
+
+    embeds = None
+    result = input_ids
+    next_input = input_ids
+    kwargs: MutableMapping[str, Any] = dict()
+    kwargs["past_key_value_states"] = None
+    kwargs["use_cache"] = use_cache
+    kwargs["include_embeds"] = include_embeds
+
+    for _ in range(max_new_tokens):
+        input_ids = next_input[:, -max_seq_len:]
+        output = model(input_ids, **kwargs)
+        if not use_cache and not include_embeds:
+            logits = output
+        else:
+            logits = output[0]
+            if include_embeds:
+                z = output[-1]
+            if use_cache:
+                past_key_value_states = output[1]
+                # TODO: this should go away when reduce-overhead issues are fixed, or
+                # maybe could be moved into model code to be more portable.
+                if contiguous_cache:
+                    kwargs["past_key_value_states"] = _make_cache_contiguous(
+                        past_key_value_states
+                    )
+                else:
+                    kwargs["past_key_value_states"] = past_key_value_states
+        logits = logits[:, -1, :]
+
+        if do_sample:
+            # get logits from last value in sequence nad scale
+            logits = logits / temperature
+            if top_k:
+                v, _ = torch.topk(logits, top_k)
+                logits[logits < v[:, [-1]]] = -float("inf")
+
+            probs = F.softmax(logits, dim=-1)
+            next_val = torch.multinomial(probs, num_samples=1)
+        else:
+            next_val = torch.argmax(logits, dim=-1).unsqueeze(0).t()
+
+        result = torch.cat((result, next_val), dim=-1)
+
+        if use_cache:
+            next_input = next_val
+        else:
+            next_input = result
+
+        if include_embeds:
+            if embeds is None:
+                embeds = z
+            else:
+                embeds = torch.cat((embeds, z), dim=-2)
+
+    if not batched:
+        result = result[0]
+
+    if include_embeds:
+        return result, embeds
+
+    return result
 
 
 def stage1_loss(model, speculator, input, loss_fn, ddp_stats):
@@ -153,7 +250,7 @@ def train_speculator(
                 tokens_seen=elapsed_tokens + n_tok,
             )
             torch.cuda.empty_cache()
-    
+
     checkpointer.save_single_file(
         batch_idx,
         speculator,
@@ -161,3 +258,67 @@ def train_speculator(
     )
 
     return train_loss
+
+
+class EmbedGPTBigCode(GPTBigCode):
+    # Overrides the forward function of GPTBigCode to allow returning embedding vectors
+    def forward(
+        self,
+        x: torch.LongTensor,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value_states: Optional[Tuple[torch.FloatTensor,]] = None,
+        mask: Optional[torch.Tensor] = None,
+        use_cache: bool = False,
+        attn_algorithm: Optional[str] = None,
+        include_embeds: bool = False,
+    ):
+        output, cache = self.base_model(
+            x,
+            mask,
+            position_ids=position_ids,
+            past_key_value_states=past_key_value_states,
+            use_cache=use_cache,
+            attn_algorithm=attn_algorithm,
+        )
+
+        preds = self.head(output)
+
+        out = [preds]
+        if use_cache:
+            out.append(cache)
+        if include_embeds:
+            out.append(output)
+        if len(out) == 1:
+            return out[0]
+        return out
+
+
+class EmbedLLaMA(LLaMA):
+    # Overrides the forward function of LLaMA to allow returning embedding vectors
+    def forward(
+        self,
+        x,
+        mask=None,
+        position_ids=None,
+        past_key_value_states=None,
+        use_cache=False,
+        only_last_token=False,
+        attn_algorithm=None,
+        include_embeds=False,
+    ):
+        output, cache = self._helper(
+            x, mask, position_ids, past_key_value_states, use_cache, attn_algorithm
+        )
+
+        if only_last_token:
+            output = output[:, -1, :]
+        preds = self.shared(output, reverse=True)
+
+        out = [preds]
+        if use_cache:
+            out.append(cache)
+        if include_embeds:
+            out.append(output)
+        if len(out) == 1:
+            return out[0]
+        return out
