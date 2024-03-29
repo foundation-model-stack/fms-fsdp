@@ -4,14 +4,14 @@ import os
 import fire
 import torch
 import torch.optim as optim
-from fms.models import get_model
-from fms.models.llama import LLaMA
+from fms.models import get_model, register_model
+from fms.models.llama import LLaMAConfig
 from fms_extras.models.speculator import MLPSpeculator
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
 from torch.optim.lr_scheduler import LambdaLR
-from train_speculator_utils import train_speculator
+from train_speculator_utils import EmbedLLaMA, train_speculator
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
@@ -23,6 +23,16 @@ from fms_fsdp.utils.train_utils import (
     setup,
     setup_environ_flags,
 )
+
+
+def _llama_factory_factory(config):
+    def factory(**kwargs):
+        return EmbedLLaMA(config, **kwargs)
+
+    return factory
+
+
+register_model("embedllama", "7b", _llama_factory_factory(LLaMAConfig()))
 
 
 def main(**kwargs):
@@ -56,7 +66,7 @@ def main(**kwargs):
 
     # get base model
     model = get_model(
-        "llama",
+        "embedllama",
         "7b",
         model_path=cfg.model_path,
         device_type="cuda",
