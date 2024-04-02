@@ -1,6 +1,5 @@
 from functools import partial
 
-from fms.models.llama import LLaMABlock
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     CheckpointImpl,
     apply_activation_checkpointing,
@@ -14,7 +13,7 @@ non_reentrant_wrapper = partial(
 )
 
 
-def apply_fsdp_checkpointing(model, p):
+def apply_fsdp_checkpointing(model, block, p):
     """
     Apply selective activation checkpointing.
 
@@ -51,7 +50,7 @@ def apply_fsdp_checkpointing(model, p):
         nonlocal block_idx
         nonlocal cut_off
 
-        if isinstance(submodule, LLaMABlock):
+        if isinstance(submodule, block):
             block_idx += 1
             if block_idx * p >= cut_off:
                 cut_off += 1

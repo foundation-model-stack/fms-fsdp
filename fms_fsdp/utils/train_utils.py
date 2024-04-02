@@ -1,4 +1,5 @@
 import os
+from functools import partial
 
 
 try:
@@ -88,6 +89,7 @@ def train(
 
         optimizer.zero_grad()
         output = model(input)
+        output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
@@ -179,8 +181,8 @@ def setup_environ_flags():
     os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
 
-def get_policies(cfg, rank):
-    """Get policies for mixed precision, FSDP wrapping, sharding strategy and param init function."""
+def get_policies(cfg, rank, block):
+    """Get policies for mixed precision, wrapping, sharding, ac and param init function."""
 
     # mixed precision
     verify_bfloat_support = (
@@ -204,7 +206,7 @@ def get_policies(cfg, rank):
         mixed_precision_policy = None
 
     # wrapping policy
-    wrapping_policy = get_llama_wrapper()
+    wrapping_policy = get_wrapper(block)
 
     # sharding strategy
     if cfg.sharding_strategy == "fsdp":
@@ -218,13 +220,22 @@ def get_policies(cfg, rank):
     if rank == 0:
         print(f"Sharding strategy = {cfg.sharding_strategy}")
 
+    # ac handler
+    apply_selective_ac = partial(apply_fsdp_checkpointing, block=block)
+
     # param init function
     if cfg.low_cpu_fsdp:
         param_init_fn = param_init_function
     else:
         param_init_fn = None
 
-    return mixed_precision_policy, wrapping_policy, sharding_strategy, param_init_fn
+    return (
+        mixed_precision_policy,
+        wrapping_policy,
+        sharding_strategy,
+        apply_selective_ac,
+        param_init_fn,
+    )
 
 
 def get_profiler(cfg, rank):
