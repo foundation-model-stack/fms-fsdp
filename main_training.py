@@ -4,7 +4,7 @@ import os
 import fire
 import torch
 import torch.optim as optim
-from fms.models.llama import LLaMA
+from fms.models.llama import LLaMA, LLaMABlock
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
@@ -20,8 +20,6 @@ from fms_fsdp.utils.train_utils import (
     setup_environ_flags,
     train,
 )
-
-from fms.models.llama import LLaMABlock
 
 
 def main(**kwargs):
@@ -99,7 +97,9 @@ def main(**kwargs):
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
             print(f"--> applying FSDP activation checkpointing...")
-        policies.apply_fsdp_checkpointing(model, cfg.selective_checkpointing, LLaMABlock)
+        policies.apply_fsdp_checkpointing(
+            model, cfg.selective_checkpointing, LLaMABlock
+        )
 
     # torch compile
     if cfg.use_torch_compile:
