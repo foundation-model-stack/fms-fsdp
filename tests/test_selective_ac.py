@@ -4,7 +4,7 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 )
 
 from fms_fsdp.policies import apply_fsdp_checkpointing
-from fms.models.llama import LLaMA, LLaMABlock
+from fms.models.llama import LLaMABlock
 
 
 @pytest.mark.parametrize("narrow_model_factory", [15], indirect=True)
