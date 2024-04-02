@@ -1,4 +1,5 @@
 import os
+from functools import partial
 
 
 try:
@@ -181,7 +182,7 @@ def setup_environ_flags():
 
 
 def get_policies(cfg, rank, block):
-    """Get policies for mixed precision, FSDP wrapping, sharding strategy and param init function."""
+    """Get policies for mixed precision, wrapping, sharding, ac and param init function."""
 
     # mixed precision
     verify_bfloat_support = (
@@ -219,13 +220,22 @@ def get_policies(cfg, rank, block):
     if rank == 0:
         print(f"Sharding strategy = {cfg.sharding_strategy}")
 
+    # ac handler
+    apply_selective_ac = partial(apply_fsdp_checkpointing, block=block)
+
     # param init function
     if cfg.low_cpu_fsdp:
         param_init_fn = param_init_function
     else:
         param_init_fn = None
 
-    return mixed_precision_policy, wrapping_policy, sharding_strategy, param_init_fn
+    return (
+        mixed_precision_policy,
+        wrapping_policy,
+        sharding_strategy,
+        apply_selective_ac,
+        param_init_fn,
+    )
 
 
 def get_profiler(cfg, rank):

@@ -9,7 +9,7 @@ from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
 
-from fms_fsdp import config, policies
+from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
@@ -46,12 +46,14 @@ def main(**kwargs):
     setup_environ_flags()
 
     # get policy
+    block = LLaMABlock
     (
         mixed_precision_policy,
         wrapping_policy,
         sharding_strategy_policy,
+        apply_selective_ac,
         param_init_fn,
-    ) = get_policies(cfg, rank, LLaMABlock)
+    ) = get_policies(cfg, rank, block)
 
     # get fms model
     llama_config = get_model_config(cfg.model_variant)
@@ -97,9 +99,7 @@ def main(**kwargs):
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
             print(f"--> applying FSDP activation checkpointing...")
-        policies.apply_fsdp_checkpointing(
-            model, LLaMABlock, cfg.selective_checkpointing
-        )
+        apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # torch compile
     if cfg.use_torch_compile:
