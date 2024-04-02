@@ -13,7 +13,7 @@ non_reentrant_wrapper = partial(
 )
 
 
-def apply_fsdp_checkpointing(model, p, block):
+def apply_fsdp_checkpointing(model, block, p):
     """
     Apply selective activation checkpointing.
 

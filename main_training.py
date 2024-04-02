@@ -98,7 +98,7 @@ def main(**kwargs):
         if rank == 0:
             print(f"--> applying FSDP activation checkpointing...")
         policies.apply_fsdp_checkpointing(
-            model, cfg.selective_checkpointing, LLaMABlock
+            model, LLaMABlock, cfg.selective_checkpointing
         )
 
     # torch compile
