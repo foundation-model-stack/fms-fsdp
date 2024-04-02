@@ -21,6 +21,8 @@ from fms_fsdp.utils.train_utils import (
     train,
 )
 
+from fms.models.llama import LLaMABlock
+
 
 def main(**kwargs):
     # get configs
@@ -51,7 +53,7 @@ def main(**kwargs):
         wrapping_policy,
         sharding_strategy_policy,
         param_init_fn,
-    ) = get_policies(cfg, rank)
+    ) = get_policies(cfg, rank, LLaMABlock)
 
     # get fms model
     llama_config = get_model_config(cfg.model_variant)
@@ -97,7 +99,7 @@ def main(**kwargs):
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
             print(f"--> applying FSDP activation checkpointing...")
-        policies.apply_fsdp_checkpointing(model, cfg.selective_checkpointing)
+        policies.apply_fsdp_checkpointing(model, cfg.selective_checkpointing, LLaMABlock)
 
     # torch compile
     if cfg.use_torch_compile:

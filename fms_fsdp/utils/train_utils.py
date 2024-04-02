@@ -88,6 +88,7 @@ def train(
 
         optimizer.zero_grad()
         output = model(input)
+        output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
@@ -179,7 +180,7 @@ def setup_environ_flags():
     os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
 
-def get_policies(cfg, rank):
+def get_policies(cfg, rank, block):
     """Get policies for mixed precision, FSDP wrapping, sharding strategy and param init function."""
 
     # mixed precision
@@ -204,7 +205,7 @@ def get_policies(cfg, rank):
         mixed_precision_policy = None
 
     # wrapping policy
-    wrapping_policy = get_llama_wrapper()
+    wrapping_policy = get_wrapper(block)
 
     # sharding strategy
     if cfg.sharding_strategy == "fsdp":
