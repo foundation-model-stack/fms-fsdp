@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import pyarrow as pa
@@ -399,6 +400,38 @@ class Buffer_Dataset(_Wrapper_Dataset):
             yield out
 
 
+class _Docset:
+    def __init__(self, docset):
+        # docset is a list of tuples (dataset, shardid, docid)
+        d = OrderedDict()
+        for dataset, shardid, docid in docset:
+            if dataset not in d:
+                d[dataset] = OrderedDict()
+            if shardid not in d[dataset]:
+                d[dataset][shardid] = []
+            d[dataset][shardid].append(docid)
+        self.d = d
+
+        _len = 0
+        for k1 in d.keys():
+            for k2 in d[k1].keys():
+                _len += len(d[k1][k2])
+        self._len = _len
+
+    def __len__(self):
+        return self._len
+
+    def __getitem__(self, i):
+        i += 1
+        cur = 0
+        for k1 in self.d.keys():
+            for k2 in self.d[k1].keys():
+                cur += len(self.d[k1][k2])
+                if cur >= i:
+                    offset = cur - i + 1
+                    return k1, k2, self.d[k1][k2][-offset]
+
+
 class Streaming_Doc_Dataset(_Stateful_Dataset):
     """
     The base distributed dataset for loading sequences/documents from pyarrow shards.
@@ -597,7 +630,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         # Shuffle shardsets across datasets, and flatten
         if shuffle:
             random.shuffle(self.docset)
-        self.docset = [key for shardset in self.docset for key in shardset]
+        self.docset = _Docset([key for shardset in self.docset for key in shardset])
 
         self.docset_index = 0
         self.chunk_index = -1
