@@ -4,7 +4,7 @@ import math
 import os
 import random
 from collections import OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Type, Union, Sized
 
 import pyarrow as pa
 import torch
@@ -400,7 +400,7 @@ class Buffer_Dataset(_Wrapper_Dataset):
             yield out
 
 
-class _Docset:
+class _Docset(Sized):
     def __init__(self, docset):
         # docset is a list of tuples (dataset, shardid, docid)
         d = OrderedDict()
