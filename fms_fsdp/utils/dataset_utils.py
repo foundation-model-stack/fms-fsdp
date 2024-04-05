@@ -688,7 +688,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                     self.epochs_seen += 1
                 self.docset_index = doc_index
                 # Map doc id to dataset, shard, id in file
-                dataset, shardid, docid = self._get_doc(doc_index)
+                dataset, shardid, docid = self._get_docid(doc_index)
                 # Map id in file to new (consistently) shuffled id
                 docid = self._random_map_docid(
                     docid, self.docs_per_shard[(dataset, shardid)]
@@ -717,7 +717,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
             # Load any chunks initially skipped in first doc
             self.docset_index = docset_offset
-            dataset, shardid, docid = self._get_doc(docset_offset)
+            dataset, shardid, docid = self._get_docid(docset_offset)
             docid = self._random_map_docid(
                 docid, self.docs_per_shard[(dataset, shardid)]
             )
