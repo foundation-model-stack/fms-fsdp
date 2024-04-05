@@ -10,8 +10,13 @@ import pyarrow as pa
 import torch
 import torch.utils.data as data
 
+
 # ZX81, cc65, Knuth and H. W. Lewis
-LCG_PARAMS = [(2 ** 16 + 1, 75, 74), (2 ** 23, 65793, 4282663), (2 ** 32, 1664525, 1013904223)]
+LCG_PARAMS = [
+    (2**16 + 1, 75, 74),
+    (2**23, 65793, 4282663),
+    (2**32, 1664525, 1013904223),
+]
 
 
 """
@@ -541,7 +546,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             docset = {}  # shardid -> (min docid, max docid)
             for i, (shard, frag) in enumerate(shardfrags):
                 ndocs = doc_counts[os.path.join(dataset, shard)]
-                self.docs_per_shard[(dataset,shard)] = ndocs
+                self.docs_per_shard[(dataset, shard)] = ndocs
                 doc_start = (ndocs * frag) // worldsize
                 doc_end = (
                     ndocs * frag + ndocs
@@ -628,7 +633,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 self.delimiter
             ]  # Add delimiter token to signify end of document (used upstream)
         return chunk
-    
+
     def _random_map_docid(self, i, size):
         for params in LCG_PARAMS:
             if size <= params[0]:
@@ -656,7 +661,9 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                     self.epochs_seen += 1
                 self.docset_index = doc_index
                 dataset, shardid, docid = self.get_doc(doc_index)
-                docid = self._random_map_docid(docid, self.docs_per_shard[(dataset, shardid)])
+                docid = self._random_map_docid(
+                    docid, self.docs_per_shard[(dataset, shardid)]
+                )
                 self.dataset_docs_seen[dataset] += 1
                 self.dataset_percent_seen[dataset] = (
                     self.dataset_docs_seen[dataset]
@@ -682,7 +689,9 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             # Load any chunks initially skipped in first doc
             self.docset_index = docset_offset
             dataset, shardid, docid = self.get_doc(docset_offset)
-            docid = self._random_map_docid(docid, self.docs_per_shard[(dataset, shardid)])
+            docid = self._random_map_docid(
+                docid, self.docs_per_shard[(dataset, shardid)]
+            )
             newpath = os.path.join(self.data, dataset, shardid)
             path, reader = self.get_reader(path, newpath, reader)
             doc = reader.get_batch(docid)["tokens"]  # .to_pylist()
