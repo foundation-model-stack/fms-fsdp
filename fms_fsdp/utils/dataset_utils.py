@@ -269,7 +269,7 @@ class Preload_Buffer_Dataset(_Wrapper_Dataset):
     Passes randomly sampled outputs one by one.
     Ensures local mixing of data without relying on sliding windows or shuffling of large buffers.
     Any two consecutive inputs will be separated by window_size steps in expectation.
-    Rescaling-enabled.
+    Rescaling-enabled: buffers that shrink will re-grow to window_size, buffers that expand stay large.
     ...
     Args
     ----
@@ -287,35 +287,49 @@ class Preload_Buffer_Dataset(_Wrapper_Dataset):
         self.window_size = window_size
         self.g_state = None
         self.generator = torch.Generator().manual_seed(self.rank)
-        self.buffer: List[str] = []
+        self.buffer: List[List[Any]] = []
+        self.buffer_size = 0
         self.state_params = ["g_state"]
         self.reshard_params = ["buffer"]
 
     def __iter__(self):
         dataset = iter(self.dataset)
         while True:
+            # Pad out buffer if needed
+            self._pad_buffer()
+
             # Load a point to buffer if necessary
-            if len(self.buffer) <= self.window_size:
-                self.buffer.append(next(dataset))
+            if self.buffer_size < self.window_size:
+                self.buffer[self.buffer_size] = next(dataset)
+                self.buffer_size += 1
 
-            # Load another point to buffer if necessary
-            if len(self.buffer) < self.window_size:
-                self.buffer.append(next(dataset))
+            # Swap out randomly sampled value from buffer
+            i = torch.randint(self.buffer_size, (1,), generator=self.generator).item()
+            out = self.buffer[i]
+            self.buffer[i] = next(dataset)
+            yield out
 
-            # Pop randomly sampled value from buffer
-            i = torch.randint(len(self.buffer), (1,), generator=self.generator).item()
-            yield self.buffer.pop(i)
+    def _pad_buffer(self):
+        if self.buffer_size < self.window_size:
+            self.buffer += [
+                [],
+            ] * (self.window_size - self.buffer_size)
 
     def state_dict(self):
-        """Write generator state manually before standard behavior."""
+        # Write generator state manually
         self.g_state = self.generator.get_state()
-        return super().state_dict()
+        # Prune buffer so it can be resharded in future
+        self.buffer = self.buffer[: self.buffer_size]
+        out = super().state_dict()
+        return out
 
     def load_state_dict(self, state_dicts, sharded_input=False):
-        """Standard load, then manually set generator state if it exists."""
         sharded_dicts = super().load_state_dict(state_dicts, sharded_input)
+        # Manually set generator state if it exists
         if self.g_state is not None:
             self.generator.set_state(self.g_state)
+        # Manually set buffer size
+        self.buffer_size = len(self.buffer)
         return sharded_dicts
 
 
@@ -637,6 +651,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         open a new reader on that filepath (pull file on demand)
         """
         if newpath != path:
+            del reader
             if self.verbose:
                 logging.info(f"Worker {self.rank} opening new file {newpath}")
             reader = pa.ipc.open_file(newpath)
