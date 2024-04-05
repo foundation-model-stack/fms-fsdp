@@ -10,6 +10,9 @@ import pyarrow as pa
 import torch
 import torch.utils.data as data
 
+# ZX81, cc65, Knuth and H. W. Lewis
+LCG_PARAMS = [(2 ** 16 + 1, 75, 74), (2 ** 23, 65793, 4282663), (2 ** 32, 1664525, 1013904223)]
+
 
 """
 The following distributed dataloaders are designed around 3 main principles:
@@ -483,6 +486,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         )
         assert len(self.datasets) > 0, "You must specify at least one dataset"
         self.docs_per_dataset = {}
+        self.docs_per_shard = {}
 
         if weights is not None:
             assert len(weights) == len(
@@ -537,6 +541,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             docset = {}  # shardid -> (min docid, max docid)
             for i, (shard, frag) in enumerate(shardfrags):
                 ndocs = doc_counts[os.path.join(dataset, shard)]
+                self.docs_per_shard[(dataset,shard)] = ndocs
                 doc_start = (ndocs * frag) // worldsize
                 doc_end = (
                     ndocs * frag + ndocs
@@ -568,8 +573,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         # Shuffle shardsets across datasets, and flatten
         if shuffle:
             random.shuffle(self.docset)
-        # self.docset_ = _Docset([key for shardset in self.docset for key in shardset])
-        # del self.docset
 
         self.docset_index = 0
         self.chunk_index = -1
@@ -625,6 +628,17 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 self.delimiter
             ]  # Add delimiter token to signify end of document (used upstream)
         return chunk
+    
+    def _random_map_docid(self, i, size):
+        for params in LCG_PARAMS:
+            if size <= params[0]:
+                m, a, c = params
+                break
+        state = i
+        while True:
+            state = (a * state + c) % m
+            if state < size:
+                return state
 
     def __iter__(self):
         docset_offset = self.docset_index
@@ -641,12 +655,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 if doc_index == 0:
                     self.epochs_seen += 1
                 self.docset_index = doc_index
-                key = self.get_doc(doc_index)
-                # if key in self.docs_seen:
-                #     self.docs_seen[key] += 1
-                # else:
-                #     self.docs_seen[key] = 1
-                dataset, shardid, docid = key
+                dataset, shardid, docid = self.get_doc(doc_index)
+                docid = self._random_map_docid(docid, self.docs_per_shard[(dataset, shardid)])
                 self.dataset_docs_seen[dataset] += 1
                 self.dataset_percent_seen[dataset] = (
                     self.dataset_docs_seen[dataset]
@@ -671,8 +681,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
             # Load any chunks initially skipped in first doc
             self.docset_index = docset_offset
-            key = self.get_doc(docset_offset)
-            dataset, shardid, docid = key
+            dataset, shardid, docid = self.get_doc(docset_offset)
+            docid = self._random_map_docid(docid, self.docs_per_shard[(dataset, shardid)])
             newpath = os.path.join(self.data, dataset, shardid)
             path, reader = self.get_reader(path, newpath, reader)
             doc = reader.get_batch(docid)["tokens"]  # .to_pylist()
