@@ -683,7 +683,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             if size <= params[0]:
                 m, a, c = params
                 break
-        state = (i + self.seed) % size
+        state = (i + self.seed + size) % m
         while True:
             state = (a * state + c) % m
             if state < size:
