@@ -615,8 +615,8 @@ def test_streaming_doc_sample():
         max_chunksize=101,
     )
     assert (
-        len(dataset.docset) == 34 * 5
-    ), f"Sampled data of length {len(dataset.docset)} does not match expected value {34*5}"
+        len(dataset.docset_) == 34 * 5
+    ), f"Sampled data of length {len(dataset.docset_)} does not match expected value {34*5}"
 
     # Each dataset has 100 entries, 33.1% rounds up to 34 entries
     dataset = Streaming_Doc_Dataset(
@@ -630,8 +630,8 @@ def test_streaming_doc_sample():
         max_chunksize=101,
     )
     assert (
-        len(dataset.docset) == 34 * 5
-    ), f"Sampled data of length {len(dataset.docset)} does not match expected value {34*5}"
+        len(dataset.docset_) == 34 * 5
+    ), f"Sampled data of length {len(dataset.docset_)} does not match expected value {34*5}"
 
 
 # SCALABLE_DATASET TESTS
