@@ -4,7 +4,7 @@ import math
 import os
 import random
 from collections import OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Type, Union, Sized
+from typing import Any, Callable, Dict, List, Optional, Sized, Type, Union
 
 import pyarrow as pa
 import torch
@@ -400,36 +400,47 @@ class Buffer_Dataset(_Wrapper_Dataset):
             yield out
 
 
-class _Docset(Sized):
+class _Docset:
     def __init__(self, docset):
         # docset is a list of tuples (dataset, shardid, docid)
-        d = OrderedDict()
+        # self.d entries are [dataset, shardid, min docid, max docid]
+        d = []  # (dataset, shardid)
+        repd = {}  # dataset -> shardid -> (first docid, min docid, max docid)
         for dataset, shardid, docid in docset:
-            if dataset not in d:
-                d[dataset] = OrderedDict()
-            if shardid not in d[dataset]:
-                d[dataset][shardid] = []
-            d[dataset][shardid].append(docid)
-        self.d = d
+            if dataset not in repd:
+                repd[dataset] = {}
+            if shardid not in repd[dataset]:
+                repd[dataset][shardid] = [docid, docid, docid]
+            first_d, min_d, max_d = repd[dataset][shardid]
+            if docid == first_d:
+                d.append((dataset, shardid))
+            if docid < min_d:
+                repd[dataset][shardid][1] = docid
+            if docid > max_d:
+                repd[dataset][shardid][2] = docid
 
-        _len = 0
-        for k1 in d.keys():
-            for k2 in d[k1].keys():
-                _len += len(d[k1][k2])
+        # convert d entries (dataset, docid) to (dataset, shardid, mindocid, maxdocid)
+        self.d = [
+            (dataset, shardid, repd[dataset][shardid][1], repd[dataset][shardid][2])
+            for dataset, shardid in d
+        ]
+
+        # calculate len
+        _len = sum([x[3] - x[2] + 1 for x in self.d])
         self._len = _len
 
     def __len__(self):
         return self._len
 
     def __getitem__(self, i):
-        i += 1
         cur = 0
-        for k1 in self.d.keys():
-            for k2 in self.d[k1].keys():
-                cur += len(self.d[k1][k2])
-                if cur >= i:
-                    offset = cur - i + 1
-                    return k1, k2, self.d[k1][k2][-offset]
+        assert (
+            i <= self._len
+        ), f"You have requested an illegal doc index {i}, docset length is {self._len}"
+        for dataset, shardid, mind, maxd in self.d:
+            cur += maxd - mind + 1
+            if cur > i:
+                return dataset, shardid, maxd - (cur - i) + 1
 
 
 class Streaming_Doc_Dataset(_Stateful_Dataset):
@@ -510,7 +521,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.chunksize = max_chunksize
         self.delimiter = delimiter_token
         self.verbose = verbose
-        self.docset = None  # map of doc indices to (dataset, shardid, docid)
+        self.docset: List[Any] = []  # map of doc indices to (dataset, shardid, docid)
         self.fileset = []
         self.datasets = (
             datasets
@@ -617,10 +628,9 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
             # Build temp docset with oversample, add to global docset
             doccount = 0
-            new_docset = []
             for shardset in docset:
                 doccount += len(shardset) * self.weights[dataset]
-                new_docset += [shardset] * self.weights[dataset]
+                self.docset += [shardset] * self.weights[dataset]
             self.docs_per_dataset[dataset] = doccount
 
             if verbose:
@@ -630,8 +640,9 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
         # Shuffle shardsets across datasets, and flatten
         if shuffle:
-            random.shuffle(new_docset)
-        self.docset = _Docset([key for shardset in new_docset for key in shardset])
+            random.shuffle(docset)
+        self.docset_ = _Docset([key for shardset in self.docset for key in shardset])
+        del self.docset
 
         self.docset_index = 0
         self.chunk_index = -1
@@ -681,7 +692,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
     def __iter__(self):
         docset_offset = self.docset_index
         residual_chunks = self.chunk_index + 1  # pick up AFTER where the ckp left off
-        ndocs = len(self.docset)
+        ndocs = len(self.docset_)
         path = ""
         reader = None
         while True:
@@ -693,7 +704,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 if doc_index == 0:
                     self.epochs_seen += 1
                 self.docset_index = doc_index
-                key = self.docset[doc_index]
+                key = self.docset_[doc_index]
                 # if key in self.docs_seen:
                 #     self.docs_seen[key] += 1
                 # else:
@@ -723,7 +734,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
             # Load any chunks initially skipped in first doc
             self.docset_index = docset_offset
-            key = self.docset[docset_offset]
+            key = self.docset_[docset_offset]
             dataset, shardid, docid = key
             newpath = os.path.join(self.data, dataset, self.fileset[shardid])
             path, reader = self.get_reader(path, newpath, reader)
@@ -937,7 +948,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
                 )
 
         # Fetch logical shard sampling stats
-        self.n_docs_remaining = [len(d.docset) for d in self.data]
+        self.n_docs_remaining = [len(d.docset_) for d in self.data]
 
         # Position "state", used only for maintaining order when n_workers is unchanged
         # For scaling up or down, logical position is meaningless, and reset
@@ -970,7 +981,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
             self.current_reader = None
             self.n_docs_remaining[ind] -= 1
             if sum(self.n_docs_remaining) == 0:
-                self.n_docs_remaining = [len(d.docset) for d in self.data]
+                self.n_docs_remaining = [len(d.docset_) for d in self.data]
             # Return final piece of doc
             yield out
 
