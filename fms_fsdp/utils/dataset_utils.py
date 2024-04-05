@@ -11,11 +11,13 @@ import torch
 import torch.utils.data as data
 
 
-# ZX81, cc65, Knuth and H. W. Lewis
+# Entries without attribution were derived empirically and validated for coverage
 LCG_PARAMS = [
-    (2**16 + 1, 75, 74),
-    (2**23, 65793, 4282663),
-    (2**32, 1664525, 1013904223),
+    (2**10, 377, 33),
+    (2**16, 77, 79),
+    (2**23, 65793, 4282663),  # cc65
+    (2**27, 1664525, 1013904223),
+    (2**32, 1664525, 1013904223),  # Knuth and H. W. Lewis
 ]
 
 
