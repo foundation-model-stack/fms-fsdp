@@ -510,7 +510,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.chunksize = max_chunksize
         self.delimiter = delimiter_token
         self.verbose = verbose
-        self.docset = []  # map of doc indices to (dataset, shardid, docid)
+        self.docset = None  # map of doc indices to (dataset, shardid, docid)
         self.fileset = []
         self.datasets = (
             datasets
@@ -617,9 +617,10 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
             # Build temp docset with oversample, add to global docset
             doccount = 0
+            new_docset = []
             for shardset in docset:
                 doccount += len(shardset) * self.weights[dataset]
-                self.docset += [shardset] * self.weights[dataset]
+                new_docset += [shardset] * self.weights[dataset]
             self.docs_per_dataset[dataset] = doccount
 
             if verbose:
@@ -629,8 +630,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
         # Shuffle shardsets across datasets, and flatten
         if shuffle:
-            random.shuffle(self.docset)
-        self.docset = _Docset([key for shardset in self.docset for key in shardset])
+            random.shuffle(new_docset)
+        self.docset = _Docset([key for shardset in new_docset for key in shardset])
 
         self.docset_index = 0
         self.chunk_index = -1
