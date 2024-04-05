@@ -310,7 +310,6 @@ def basic_loader(
         rank,
         worldsize,
         -1,
-        trainsplit=1,
         datasets=datasets,
         weights=weights,
         max_chunksize=max_chunksize,
@@ -326,7 +325,6 @@ def basic_sampler(
         rank,
         worldsize,
         -1,
-        trainsplit=1,
         datasets=datasets,
         weights=weights,
         max_chunksize=max_chunksize,
@@ -346,7 +344,6 @@ def basic_scalable(
         rank,
         worldsize,
         -1,
-        trainsplit=1,
         datasets=datasets,
         weights=weights,
         max_chunksize=max_chunksize,
@@ -368,7 +365,6 @@ def basic_scalable_sampler(
         rank,
         worldsize,
         -1,
-        trainsplit=1,
         datasets=datasets,
         weights=weights,
         max_chunksize=max_chunksize,
@@ -520,7 +516,6 @@ def test_multi_reload_stress():
             i,
             3,
             -1,
-            trainsplit=1,
             datasets=["dataset_1", "dataset_2"],
             weights=[3, 5],
             max_chunksize=17,
@@ -537,7 +532,6 @@ def test_multi_reload_stress():
             i,
             3,
             -1,
-            trainsplit=1,
             datasets=["dataset_1", "dataset_2"],
             weights=[3, 5],
             max_chunksize=17,
@@ -554,7 +548,6 @@ def test_multi_reload_stress():
             3,
             -1,
             n_logical_shards=15,
-            trainsplit=1,
             datasets=["dataset_1", "dataset_2"],
             weights=[3, 5],
             max_chunksize=17,
@@ -572,7 +565,6 @@ def test_multi_reload_stress():
             3,
             -1,
             n_logical_shards=15,
-            trainsplit=1,
             datasets=["dataset_1", "dataset_2"],
             weights=[3, 5],
             max_chunksize=17,
@@ -598,42 +590,6 @@ def test_multi_reload_stress():
     multi_reload_stress_check(lambda: d7(d4()))
 
 
-# STREAMING_DOC_DATASET TESTS
-
-
-def test_streaming_doc_sample():
-    # Check that % grab, grabs precisely and rounds correctly (multi dataset, weighted, single loader)
-
-    dataset = Streaming_Doc_Dataset(
-        tmpdir.name,
-        0,
-        1,
-        -1,
-        trainsplit=0.34,
-        datasets=["dataset_1", "dataset_2"],
-        weights=[2, 3],
-        max_chunksize=101,
-    )
-    assert (
-        len(dataset.docset_) == 34 * 5
-    ), f"Sampled data of length {len(dataset.docset_)} does not match expected value {34*5}"
-
-    # Each dataset has 100 entries, 33.1% rounds up to 34 entries
-    dataset = Streaming_Doc_Dataset(
-        tmpdir.name,
-        0,
-        1,
-        -1,
-        trainsplit=0.331,
-        datasets=["dataset_1", "dataset_2"],
-        weights=[2, 3],
-        max_chunksize=101,
-    )
-    assert (
-        len(dataset.docset_) == 34 * 5
-    ), f"Sampled data of length {len(dataset.docset_)} does not match expected value {34*5}"
-
-
 # SCALABLE_DATASET TESTS
 
 
@@ -646,7 +602,6 @@ def test_scalable_partitioning():
     for layer in [Scalable_Shard_Dataset, Sampling_Dataset]:
         kwargs = {
             "n_logical_shards": 12,
-            "trainsplit": 1,
             "datasets": ["dataset_1"],
             "weights": [1],
             "max_chunksize": 200,
@@ -666,7 +621,6 @@ def test_scalable_partitioning():
 
         kwargs = {
             "n_logical_shards": 12,
-            "trainsplit": 1,
             "datasets": ["dataset_1"],
             "weights": [1],
             "max_chunksize": 200,
@@ -731,7 +685,6 @@ def test_scalable_shard_reload_scale():
             2,
             -1,
             n_logical_shards=8,
-            trainsplit=1,
             datasets=["dataset_1"],
             weights=[1],
             max_chunksize=40,
@@ -757,7 +710,6 @@ def test_scalable_shard_reload_scale():
             4,
             -1,
             n_logical_shards=8,
-            trainsplit=1,
             datasets=["dataset_1"],
             weights=[1],
             max_chunksize=40,
@@ -794,7 +746,6 @@ def test_scalable_sampler_reload_scale():
             2,
             -1,
             n_logical_shards=8,
-            trainsplit=1,
             datasets=["dataset_1"],
             weights=[1],
             max_chunksize=40,
@@ -821,7 +772,6 @@ def test_scalable_sampler_reload_scale():
             4,
             -1,
             n_logical_shards=8,
-            trainsplit=1,
             datasets=["dataset_1"],
             weights=[1],
             max_chunksize=40,

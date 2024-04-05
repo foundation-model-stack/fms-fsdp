@@ -474,10 +474,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         Total number of workers
     delimiter_token : Any
         Token used to indicate sequence/document breaks. Type should match data type.
-    trainsplit : float
-        The fraction of data to assign to a training split (vs val split)
-    is_val : bool
-        Draw from the val split (vs from the train split)?
     datasets : list[str] | None
         A list of subdatasets to draw from. If None, draws from all subfolders.
     weights : list[int] | None
@@ -500,8 +496,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         rank: int,
         worldsize: int,
         delimiter_token: Any,
-        trainsplit: float = 1,
-        is_val: bool = False,
         datasets: Optional[List[str]] = None,
         weights: Optional[List[int]] = None,
         seed: int = 42,
@@ -511,9 +505,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         shuffle: bool = True,
     ):
         super(Streaming_Doc_Dataset, self).__init__(rank, worldsize)
-        assert (
-            trainsplit >= 0 and trainsplit <= 1
-        ), "Fraction of data (trainsplit) must be a positive fraction greater than 1"
         self.seed = seed
         self.data = datapath
         self.min_length = min_length
@@ -611,20 +602,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             # Add final shardset
             if len(shardset) > 0:
                 docset.append(shardset)
-
-            # Shuffle docs inside each shardset, partition docs into train/val
-            docset_slim = []
-            for shardset in docset:
-                shardset.sort()  # Tie partition directly to chosen seed, ignore order from keys()
-                if shuffle:
-                    random.shuffle(shardset)
-                cutoff = math.ceil(trainsplit * len(shardset))  # Cutoff rounds up
-                if is_val:
-                    shardset = shardset[cutoff:]
-                else:
-                    shardset = shardset[:cutoff]
-                docset_slim.append(shardset)
-            docset = docset_slim
 
             # Build temp docset with oversample, add to global docset
             doccount = 0
