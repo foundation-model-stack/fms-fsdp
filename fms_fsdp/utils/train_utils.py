@@ -114,11 +114,14 @@ def train(
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
-                current_elapsed_time = (time.time() - start) / cfg.report_interval
+                current_step_time = (time.time() - start) / cfg.report_interval
+                overall_step_time = elapsed_time / (batch_idx - start_step)
                 current_throughput = int(
-                    cfg.batch_size * cfg.seq_length / current_elapsed_time
+                    cfg.batch_size * cfg.seq_length / current_step_time
                 )
-                overall_throughput = int(new_tokens_seen / world_size / elapsed_time)
+                overall_throughput = int(
+                    cfg.batch_size * cfg.seq_length / overall_step_time
+                )
                 reserved_mem = torch.cuda.max_memory_reserved(
                     device=torch.cuda.current_device()
                 )
@@ -127,17 +130,14 @@ def train(
                 )
 
                 print("step:", batch_idx)
-                print("tokens seen:", total_tokens_seen)
                 print("loss:", current_loss)
-                print("gradient norm:", current_gnorm)
-                print(
-                    f"speed for these {cfg.report_interval} steps:",
-                    current_elapsed_time,
-                )
-                print("overall speed:", elapsed_time / (batch_idx - start_step))
                 print("LR:", current_lr)
+                print("tokens seen:", total_tokens_seen)
+                print("gradient norm:", current_gnorm)
                 print("reserved memory:", reserved_mem)
                 print("allocated memory:", allocated_mem)
+                print("current step time:", current_step_time)
+                print("overall step time:", overall_step_time)
                 print("current token per gpu per sec:", current_throughput)
                 print("overall token per gpu per sec:", overall_throughput)
                 print(
