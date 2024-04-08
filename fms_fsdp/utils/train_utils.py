@@ -1,4 +1,5 @@
 import os
+from dataclasses import asdict
 from functools import partial
 
 
@@ -36,11 +37,6 @@ def train(
         tracker_dir = cfg.tracker_dir
         project_name = cfg.tracker_project_name
         run_id = cfg.tracker_run_id
-        hparams = {
-            "learning_rate": cfg.learning_rate,
-            "num_steps": cfg.num_steps,
-            "batch_size": cfg.batch_size,
-        }
 
         if cfg.tracker == "wandb":
             try:
@@ -60,7 +56,7 @@ def train(
                     raise ValueError(
                         "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                     )
-                wandb.config = hparams
+                wandb.config = asdict(cfg)
 
         if cfg.tracker == "aim":
             try:
@@ -74,7 +70,7 @@ def train(
                     repo=tracker_dir,
                     run_hash=run_id,
                 )
-                run["hparams"] = hparams
+                run["hparams"] = asdict(cfg)
 
     model.train()
     ddp_stats = torch.zeros(3).to(local_rank)
