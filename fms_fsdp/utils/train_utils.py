@@ -114,6 +114,8 @@ def train(
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
+                current_elapsed_time = (time.time() - start) / cfg.report_interval
+                current_throughput = int(cfg.batch_size * cfg.seq_length / current_elapsed_time)
                 overall_throughput = int(new_tokens_seen / world_size / elapsed_time)
                 reserved_mem = torch.cuda.max_memory_reserved(
                     device=torch.cuda.current_device()
@@ -128,21 +130,23 @@ def train(
                 print("gradient norm:", current_gnorm)
                 print(
                     f"speed for these {cfg.report_interval} steps:",
-                    (time.time() - start) / cfg.report_interval,
+                    current_elapsed_time,
                 )
                 print("overall speed:", elapsed_time / (batch_idx - start_step))
                 print("LR:", current_lr)
                 print("reserved memory:", reserved_mem)
                 print("allocated memory:", allocated_mem)
+                print("current token per gpu per sec:", current_throughput)
                 print("overall token per gpu per sec:", overall_throughput)
-                print("token per day:", int(new_tokens_seen / elapsed_time * 3600 * 24))
+                print("overall token per day:", int(new_tokens_seen / elapsed_time * 3600 * 24))
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,
                         "loss": current_loss,
                         "gradient norm": current_gnorm,
                         "token seen": total_tokens_seen,
-                        "throughput (token per gpu per sec)": overall_throughput,
+                        "current throughput (token per gpu per sec)": current_throughput,
+                        "overall throughput (token per gpu per sec)": overall_throughput,
                         "gpu reserved memory": reserved_mem,
                         "gpu allocated memory": allocated_mem,
                     }
