@@ -11,16 +11,6 @@ import torch
 import torch.utils.data as data
 
 
-# Entries without attribution were derived empirically and validated for coverage
-LCG_PARAMS = [
-    (2**10, 377, 33),
-    (2**16, 77, 79),
-    (2**23, 65793, 4282663),  # cc65
-    (2**27, 1664525, 1013904223),
-    (2**32, 1664525, 1013904223),  # Knuth and H. W. Lewis
-]
-
-
 """
 The following distributed dataloaders are designed around 3 main principles:
 
@@ -619,6 +609,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.dataset_tokens_seen = {d: 0 for d in self.datasets}
         self.dataset_docs_seen = {d: 0 for d in self.datasets}
         self.dataset_percent_seen = {d: 0 for d in self.datasets}
+        self.lcg_state = seed
         # self.docs_seen: Dict[Any, int] = {}  # (dataset, shard, i) -> # times seen
 
         self.state_params = [
@@ -628,6 +619,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             "dataset_tokens_seen",
             "dataset_docs_seen",
             "dataset_percent_seen",
+            "lcg_state",
             # "docs_seen",
         ]
 
@@ -641,9 +633,10 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             i <= self._len
         ), f"You have requested an illegal doc index {i}, docset length is {self._len}"
         for dataset, shardid, mind, maxd in self.docset:
-            cur += maxd - mind + 1
+            docrange = maxd - mind + 1
+            cur += docrange
             if cur > i:
-                return dataset, shardid, maxd - (cur - i) + 1
+                return dataset, shardid, docrange, mind
 
     def _get_reader(self, path, newpath, reader):
         """
@@ -673,17 +666,15 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             ]  # Add delimiter token to signify end of document (used upstream)
         return chunk
 
-    def _random_map_docid(self, i, size):
+    def _random_map_docid(self, size):
         """
-        Given index into list of length size, use ZCG "iterator" as bijective
-        random shuffle to get new randomized index. Implements within-shard document
-        shuffling without materializing any large doc lists.
+        Given size of document pool, use saved state (prior index) to generate the next index via LCG.
+        Implements within-shard document shuffling without materializing any large doc lists.
         """
-        for params in LCG_PARAMS:
-            if size <= params[0]:
-                m, a, c = params
-                break
-        state = i
+        m = 2 ** math.ceil(math.log2(size))  # Round up to nearest power of 2
+        a = 5  # A,C values known to work well with powers of 2 (Knuth, 1997, 3.2.1.3)
+        c = 1
+        state = self.lcg_state
         while True:
             state = (a * state + c) % m
             if state < size:
@@ -691,6 +682,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
     def __iter__(self):
         docset_offset = self.docset_index
+        lcg_offset = self.lcg_state
         residual_chunks = self.chunk_index + 1  # pick up AFTER where the ckp left off
         ndocs = self._len
         path = ""
@@ -705,21 +697,14 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                     self.epochs_seen += 1
                 self.docset_index = doc_index
                 # Map doc id to dataset, shard, id in file
-                dataset, shardid, docid = self._get_docid(doc_index)
-                # Map id in file to new (consistently) shuffled id
-                docid = self._random_map_docid(
-                    docid, self.docs_per_shard[(dataset, shardid)]
-                )
-                self.dataset_docs_seen[dataset] += 1
-                self.dataset_percent_seen[dataset] = (
-                    self.dataset_docs_seen[dataset]
-                    * 100
-                    / (self.docs_per_dataset[dataset] + 1e-9)
-                )
+                dataset, shardid, docrange, mindoc = self._get_docid(doc_index)
 
                 # Read doc
                 newpath = os.path.join(self.data, dataset, shardid)
                 path, reader = self._get_reader(path, newpath, reader)
+                # Map id in file to new (consistently) shuffled id
+                doclcg = self._random_map_docid(docrange)
+                docid = doclcg + mindoc
                 doc = reader.get_batch(docid)["tokens"]
                 if len(doc) >= self.min_length:
                     n_chunks = math.ceil(
@@ -730,14 +715,24 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                             pass
                         else:
                             self.chunk_index = j
+                            # Document complete, update stats
+                            if j == n_chunks - 1:
+                                self.dataset_docs_seen[dataset] += 1
+                                self.dataset_percent_seen[dataset] = (
+                                    self.dataset_docs_seen[dataset]
+                                    * 100
+                                    / (self.docs_per_dataset[dataset] + 1e-9)
+                                )
                             yield self._construct_chunk(j, doc, n_chunks, dataset)
+
+                # Advance RNG state
+                self.lcg_state = doclcg
 
             # Load any chunks initially skipped in first doc
             self.docset_index = docset_offset
-            dataset, shardid, docid = self._get_docid(docset_offset)
-            docid = self._random_map_docid(
-                docid, self.docs_per_shard[(dataset, shardid)]
-            )
+            self.lcg_state = lcg_offset
+            dataset, shardid, docrange, mindoc = self._get_docid(docset_offset)
+            docid = self._random_map_docid(docrange) + mindoc
             newpath = os.path.join(self.data, dataset, shardid)
             path, reader = self._get_reader(path, newpath, reader)
             doc = reader.get_batch(docid)["tokens"]

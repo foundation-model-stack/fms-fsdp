@@ -257,7 +257,7 @@ def chunk_weight_check(w1, w2, d, do_countcheck=False):
         count_check(dataset, "dataset_2", 100 * 50 * w2, w2, 100 * w2, 100)
 
 
-def scalable_shard_reload_epoch_check(loader):
+def reload_epoch_check(loader):
     # Single shard, two loaders: do exactly 1/3 of an epoch, checkpoint, reload to same number of workers.
     # Complete the epoch and verify that no loaded chunks are revisiting old chunks.
     datasets = [
@@ -297,6 +297,50 @@ def scalable_shard_reload_epoch_check(loader):
             assert (
                 out[0] not in ins
             ), f"Step {j+1}, dataset {i+1}: chunk starting with {out[0]} has already appeared in the epoch"
+
+
+def reload_single_epoch_check(loader):
+    # Single shard, two loaders: advance 37 steps, checkpoint, reload to same number of workers.
+    # Run a full epoch and verify that all data appears once and only once.
+    datasets = [
+        loader(
+            rank=i,
+            worldsize=2,
+            max_chunksize=40,
+        )
+        for i in range(2)
+    ]  # Length 300
+    loaders = [iter(d) for d in datasets]
+
+    for _ in range(37):
+        out = next(loaders[0])
+    for _ in range(37):
+        out = next(loaders[1])
+
+    states = [d.state_dict() for d in datasets]
+
+    datasets2 = [
+        loader(
+            rank=i,
+            worldsize=2,
+            max_chunksize=40,
+        )
+        for i in range(2)
+    ]  # Length 300
+    [d.load_state_dict(states) for d in datasets2]
+    loaders2 = [iter(d) for d in datasets2]
+
+    ins = []
+    for _ in range(150):
+        out = next(loaders2[0])
+        ins.append(out[0])
+    for _ in range(150):
+        out = next(loaders2[1])
+        ins.append(out[0])
+
+    assert len(ins) == len(
+        set(ins)
+    ), f"Full epoch output contains {len(ins)} values but only {len(set(ins))} unique"
 
 
 # BASE DATASET TESTS
@@ -414,14 +458,17 @@ def test_multi_file():
 
 def test_reload_epoch():
     # Single shard, two loaders: check that reloading mid-epoch does not cause data to repeat while finishing the epoch
-    scalable_shard_reload_epoch_check(basic_loader)
-    scalable_shard_reload_epoch_check(
-        functools.partial(basic_scalable, n_logical_shards=8)
-    )
-    scalable_shard_reload_epoch_check(basic_sampler)
-    scalable_shard_reload_epoch_check(
-        functools.partial(basic_scalable_sampler, n_logical_shards=8)
-    )
+    reload_epoch_check(basic_loader)
+    reload_epoch_check(functools.partial(basic_scalable, n_logical_shards=8))
+    reload_epoch_check(basic_sampler)
+    reload_epoch_check(functools.partial(basic_scalable_sampler, n_logical_shards=8))
+
+
+def test_reload_complete_epoch():
+    # Single shard, two loaders: check that reloading mid-epoch can still complete a full epoch
+    # Skip scalable loaders as epoch 2 may sample workers differently from epoch 1
+    reload_single_epoch_check(basic_loader)
+    reload_single_epoch_check(basic_sampler)
 
 
 # SUBDATASET WEIGHTING CHECKS
