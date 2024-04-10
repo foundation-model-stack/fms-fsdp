@@ -74,8 +74,6 @@ def get_data_loader(cfg, rank, world_size):
         rank,
         world_size,
         cfg.sep_token,
-        trainsplit=1,
-        is_val=False,
         min_length=3,
         datasets=datasets,
         weights=weights,
