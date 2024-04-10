@@ -98,7 +98,9 @@ def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
 def main(model_variant, compiled, load_path, save_path, tokenizer_name_or_path):
     print("Initializing model...")
     llama_config = get_model_config(model_variant)
-    model = LLaMA(llama_config, orig_init=True)
+    with torch.device("meta"):
+        model = LLaMA(llama_config)
+    model.to_empty(device="cpu")
 
     print(f"Reading state dict from {load_path}")
     if not compiled:
