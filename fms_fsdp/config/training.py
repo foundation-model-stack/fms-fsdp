@@ -44,7 +44,7 @@ class train_config:
     use_torch_compile: bool = False
 
     # speculator training
-    model_path: str = "/lustre/llama_weights/hf/7B-F/"
+    model_path: str = "/lustre/base/ckpt/"
     n_speculator_heads: int = 3
     speculator_width: int = 4096
     stage2_start_step: int = 15000

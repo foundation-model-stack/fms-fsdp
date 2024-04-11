@@ -1,3 +1,5 @@
+from typing import List, Tuple, Union
+
 import torch
 
 from fms_fsdp.utils.dataset_utils import (
@@ -9,14 +11,17 @@ from fms_fsdp.utils.dataset_utils import (
 )
 
 
-def parse_data_args(datas, weights):
+def parse_data_args(
+    datas: Union[str, List[str], Tuple[str]],
+    weights: Union[int, float, List[Union[int, float]], Tuple[Union[int, float]]],
+):
     # Convert csv inputs into corresponding lists of values
     def splitstrip(x):
         if isinstance(x, str):
             return [item.strip() for item in x.split(",")]
         elif isinstance(x, (list, tuple)):
             return list(x)
-        elif isinstance(x, (int, float, complex)):
+        elif isinstance(x, (int, float)):
             return [x]
         else:
             raise ValueError(f"arg input {x} cannot be parsed.")
@@ -26,7 +31,7 @@ def parse_data_args(datas, weights):
     return datas, weights
 
 
-def causal_lm(data_seq, prompt_len=1):
+def causal_lm(data_seq: torch.Tensor, prompt_len: int = 1):
     """
     Perform causal language modeling by right-shifting the input sequence.
     Sets first prompt_len tokens to be ignored by the loss.

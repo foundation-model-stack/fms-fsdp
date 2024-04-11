@@ -4,11 +4,15 @@ from typing import Any, Callable, MutableMapping, Optional, Tuple, Union
 
 import torch
 import torch.distributed as dist
+import torch.nn as nn
 import torch.nn.functional as F
 from fms.models.gpt_bigcode import GPTBigCode
 from fms.models.llama import LLaMA
 from fms.utils.generation import _make_cache_contiguous
 from torch.nn import CrossEntropyLoss
+
+from fms_fsdp.config import train_config
+from fms_fsdp.utils.checkpointing_utils import Checkpointer
 
 
 def generate(
@@ -105,6 +109,28 @@ def generate(
 
 
 def stage1_loss(model, speculator, input, loss_fn, ddp_stats):
+    """
+    Perform a forward pass for stage 1 training and calculate the loss.
+    Given the sequence of embeddings produced in parallel by the base model,
+    get n+2,n+3,... speculator predictions and compare to ground truth tokens.
+    ...
+    Args
+    ----
+    model: nn.Module
+        The frozen base model. Must return output logits AND corresponding embedding vectors.
+    speculator: nn.Module
+        The speculator to be trained. Takes as input sequence of embeddings and token indices,
+        and return token prediction logits for each head.
+    input: torch.IntTensor
+        The ground truth token indices.
+    loss_fn: Callable
+        Torch loss function comparing logits to indices i.e. CrossEntropyLoss()
+    ddp_stats: torch.FloatTensor
+        Aggregate stat tracking buffer.
+        Entries are: grad norm, accumulation steps, head 1 loss, head 2 loss, etc.
+    ----
+    Returns: scalar loss value, updated ddp stats, number of tokens in input
+    """
     with torch.no_grad():
         _, embeds = model(
             input[:, : -speculator.n_predict - 1],
@@ -124,6 +150,19 @@ def stage1_loss(model, speculator, input, loss_fn, ddp_stats):
 
 
 def stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats):
+    """
+    Perform a forward pass for stage 2 training and calculate the loss.
+    Given the sequence of embeddings produced in serial by the base model,
+    get n+1,n+2,... speculator predictions and compare to base model's generated tokens.
+    Reshapes input to more entries / shorter sequences, for more efficient generation.
+    ...
+    Args
+    ----
+    cfg: train_config
+        Set of training parameters. Used here for reshaping input batches.
+    ----
+    Other args and output are same as stage1_loss
+    """
     with torch.no_grad():
         grow_factor = cfg.stage2_batch_size // cfg.batch_size
         assert (
@@ -156,19 +195,52 @@ def stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats):
 
 
 def train_speculator(
-    cfg,
-    model,
-    speculator,
-    local_rank,
-    rank,
-    train_loader,
-    optimizer,
-    scheduler,
-    profiler,
-    checkpointer,
-    start_step,
-    n_tok,
+    cfg: train_config,
+    model: nn.Module,
+    speculator: nn.Module,
+    local_rank: int,
+    rank: int,
+    train_loader: torch.utils.data.Dataloader,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    checkpointer: Checkpointer,
+    start_step: int = 0,
+    n_tok: int = 0,
+    profiler: torch.profiler.profile = None,
 ):
+    """
+    The training loop for speculator training. Handles at a high level: data loading,
+    forward and backward passes, model updates, stat tracking, reporting, and checkpointing.
+    ...
+    Args
+    ----
+    cfg: train_config
+        The set of training parameters
+    model: nn.Module
+        The frozen base model. Must return output logits AND corresponding embedding vectors.
+    speculator: nn.Module
+        The speculator to be trained. Takes as input sequence of embeddings and token indices,
+        and returns token prediction logits for each head.
+    local_rank: int
+        The local rank of the current process. Used for stat tracking / aggregation across ranks.
+    rank: int
+        The global rank of the current process. Used for reporting.
+    train_loader: torch.utils.data.Dataloader
+        The dataloader used for reading in ground truth token sequences. Train_loader.dataset must
+        support save_to_path() for distributed checkpointing via checkpointer.
+    optimizer: torch.optim.Optimizer
+        The optimizer associated with the speculator's weights
+    scheduler: torch.optim.lr_scheduler.LRScheduler
+        A scheduler for the optimizer's LR. Scheduler.step() is called on every optimizer step.
+    checkpointer: fms_fsdp.utils.checkpointing_utils.Checkpointer
+        A checkpointer tied to the save directory. Used for saving distributed checkpoints.
+    start_step: optional[int]
+        If resuming from checkpoint, resume step count from this value.
+    n_tok: optional[int]
+        If resuming from checkpoint, resume token count from this value.
+    profiler: optional[torch.profiler.profile]
+        Optional torch profiler for performance benchmarking.
+    """
     model.eval()
     speculator.train()
     ddp_stats = torch.zeros(2 + speculator.n_predict).to(local_rank)
