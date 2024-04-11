@@ -1,17 +1,16 @@
 import math
 import os
 
-import fire
+import fire  # type: ignore
 import torch
 import torch.optim as optim
 from fms.models import get_model, register_model
 from fms.models.llama import LLaMAConfig
-from fms_extras.models.speculator import MLPSpeculator
+from fms_extras.models.speculator import MLPSpeculator  # type: ignore
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
 from torch.optim.lr_scheduler import LambdaLR
-from speculator.train_speculator_utils import EmbedLLaMA, train_speculator
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
@@ -23,6 +22,7 @@ from fms_fsdp.utils.train_utils import (
     setup,
     setup_environ_flags,
 )
+from speculator.train_speculator_utils import EmbedLLaMA, train_speculator
 
 
 def _llama_factory_factory(config):
