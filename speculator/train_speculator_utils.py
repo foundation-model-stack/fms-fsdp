@@ -10,6 +10,7 @@ from fms.models.gpt_bigcode import GPTBigCode
 from fms.models.llama import LLaMA
 from fms.utils.generation import _make_cache_contiguous
 from torch.nn import CrossEntropyLoss
+from torch.utils.data import DataLoader
 
 from fms_fsdp.config import train_config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
@@ -200,13 +201,13 @@ def train_speculator(
     speculator: nn.Module,
     local_rank: int,
     rank: int,
-    train_loader: torch.utils.data.Dataloader,
+    train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     checkpointer: Checkpointer,
-    start_step: int = 0,
-    n_tok: int = 0,
-    profiler: torch.profiler.profile = None,
+    start_step: Optional[int] = 0,
+    n_tok: Optional[int] = 0,
+    profiler: Optional[Union[torch.profiler.profile, None]] = None,
 ):
     """
     The training loop for speculator training. Handles at a high level: data loading,
@@ -225,7 +226,7 @@ def train_speculator(
         The local rank of the current process. Used for stat tracking / aggregation across ranks.
     rank: int
         The global rank of the current process. Used for reporting.
-    train_loader: torch.utils.data.Dataloader
+    train_loader: torch.utils.data.DataLoader
         The dataloader used for reading in ground truth token sequences. Train_loader.dataset must
         support save_to_path() for distributed checkpointing via checkpointer.
     optimizer: torch.optim.Optimizer
