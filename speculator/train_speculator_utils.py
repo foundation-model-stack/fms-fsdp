@@ -205,8 +205,8 @@ def train_speculator(
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     checkpointer: Checkpointer,
-    start_step: Optional[int] = 0,
-    n_tok: Optional[int] = 0,
+    start_step: int = 0,
+    n_tok: int = 0,
     profiler: Optional[Union[torch.profiler.profile, None]] = None,
 ):
     """
