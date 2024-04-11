@@ -11,7 +11,7 @@ from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
 from torch.optim.lr_scheduler import LambdaLR
-from train_speculator_utils import EmbedLLaMA, train_speculator
+from speculator.train_speculator_utils import EmbedLLaMA, train_speculator
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
