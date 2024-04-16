@@ -4,12 +4,12 @@ import os
 import fire
 import torch
 import torch.optim as optim
-from fms.models.llama import LLaMA
+from fms.models.llama import LLaMA, LLaMABlock
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
 
-from fms_fsdp import config, policies
+from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import causal_lm, get_data_loader, get_dummy_loader
@@ -46,20 +46,20 @@ def main(**kwargs):
     setup_environ_flags()
 
     # get policy
-    mixed_precision_policy, wrapping_policy, sharding_strategy_policy = get_policies(
-        cfg, rank
-    )
+    block = LLaMABlock
+    (
+        mixed_precision_policy,
+        wrapping_policy,
+        sharding_strategy_policy,
+        apply_selective_ac,
+        param_init_fn,
+    ) = get_policies(cfg, rank, block)
 
     # get fms model
     llama_config = get_model_config(cfg.model_variant)
-
     if cfg.low_cpu_fsdp:
-        if rank == 0:
+        with torch.device("meta"):
             model = LLaMA(llama_config)
-            model.reset_parameters()
-        else:
-            with torch.device("meta"):
-                model = LLaMA(llama_config)
     else:
         model = LLaMA(llama_config)
         model.reset_parameters()
@@ -87,12 +87,7 @@ def main(**kwargs):
         use_orig_params=cfg.use_torch_compile,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
-        sync_module_states=cfg.low_cpu_fsdp,
-        param_init_fn=lambda module: (
-            module.to_empty(device=torch.device("cuda"), recurse=False)
-            if cfg.low_cpu_fsdp
-            else None
-        ),
+        param_init_fn=param_init_fn,
     )
     # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
     model.rot_emb.compute_freqs_cis(
@@ -104,7 +99,7 @@ def main(**kwargs):
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
             print(f"--> applying FSDP activation checkpointing...")
-        policies.apply_fsdp_checkpointing(model, cfg.selective_checkpointing)
+        apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # torch compile
     if cfg.use_torch_compile:
@@ -142,7 +137,7 @@ def main(**kwargs):
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler
-    profiler = get_profiler(cfg)
+    profiler = get_profiler(cfg, rank)
 
     # Train
     if rank == 0:

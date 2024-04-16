@@ -7,6 +7,7 @@
 black==24.1.1
 mypy==1.8.0
 mypy-extensions==1.0.0
+pytest==8.1.1
 
 # Types packages
 pyarrow-stubs==10.0.1.7
@@ -15,3 +16,4 @@ types-setuptools==69.0.0.20240125
 
 # Local import libraries that we don't want to put in global requirements.txt
 wandb==0.16.4
+aim==3.19.1

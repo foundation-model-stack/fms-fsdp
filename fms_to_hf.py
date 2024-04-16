@@ -95,19 +95,27 @@ def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
     return oss_hf_model
 
 
-def main(model_variant, load_path, save_path, tokenizer_name_or_path):
+def main(model_variant, compiled, load_path, save_path, tokenizer_name_or_path):
     print("Initializing model...")
     llama_config = get_model_config(model_variant)
-    model = LLaMA(llama_config, orig_init=True)
+    with torch.device("meta"):
+        model = LLaMA(llama_config)
+    model.to_empty(device="cpu")
 
     print(f"Reading state dict from {load_path}")
-    state_dict = {"model_state": model.state_dict()}
+    if not compiled:
+        state_dict = {"model_state": model.state_dict()}
+    else:
+        state_dict = {"model_state": {"_orig_mod": model.state_dict()}}
     load_state_dict(
         state_dict=state_dict, storage_reader=FileSystemReader(load_path), no_dist=True
     )
 
     print("Loading state dict into the model...")
-    model.load_state_dict(state_dict["model_state"])
+    if not compiled:
+        model.load_state_dict(state_dict["model_state"])
+    else:
+        model.load_state_dict(state_dict["model_state"]["_orig_mod"])
 
     print("Converting to HF model..")
     hf_model = convert_to_hf(model)

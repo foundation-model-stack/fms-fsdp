@@ -75,7 +75,7 @@ we have learnt from this journey can be found in [Training Details](docs/train_d
 The model trained with this repo is in FMS format, and you might want to convert it
 to Huggingface format so that you can load it natively with Huggingface and leverage Huggingface ecosystem:
 ```bash
-python fms_to_hf.py --model_variant 7b --load_path /path/to/trained/checkpoints --save_path /output/path --tokenizer_name_or_path /path/to/llama/tokenizer
+python fms_to_hf.py --model_variant 7b --nocompiled --load_path /path/to/trained/checkpoints --save_path /output/path --tokenizer_name_or_path /path/to/llama/tokenizer
 ```
 > [!Note]
 > This repo consumes pre-tokenized data thus does not require a tokenizer. However,
