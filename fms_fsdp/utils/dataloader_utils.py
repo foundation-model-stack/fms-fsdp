@@ -93,7 +93,11 @@ def get_data_loader(cfg, rank, world_size):
     data = Preprocess_Dataset(data, causal_lm)
     # Enable auto-saving
     data = Checkpoint_Dataset(
-        data, cfg.ckpt_load_path, cfg.checkpoint_interval, cfg.ckpt_save_path
+        data,
+        cfg.ckpt_load_path,
+        cfg.checkpoint_interval,
+        cfg.batch_size,
+        cfg.ckpt_save_path,
     )
     return torch.utils.data.DataLoader(data, num_workers=1, batch_size=cfg.batch_size)
 

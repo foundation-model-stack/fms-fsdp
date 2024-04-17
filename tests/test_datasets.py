@@ -980,13 +980,14 @@ def test_checkpoint_reload_match():
         )
         for i in range(3)
     ]
+    datasets = [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets]
     datasets = [
-        Checkpoint_Dataset(x, os.path.join(tmpdir.name, "ckp_test"), 100)
+        Checkpoint_Dataset(x, os.path.join(tmpdir.name, "ckp_test"), 100, 2)
         for x in datasets
     ]
     loaders = [
         torch.utils.data.DataLoader(
-            x, num_workers=1, batch_size=1, prefetch_factor=1, persistent_workers=True
+            x, num_workers=1, batch_size=2, prefetch_factor=1, persistent_workers=True
         )
         for x in datasets
     ]
@@ -1016,8 +1017,9 @@ def test_checkpoint_reload_match():
         )
         for i in range(3)
     ]
+    datasets2 = [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets2]
     datasets2 = [
-        Checkpoint_Dataset(x, os.path.join(tmpdir.name, "ckp_test"), 1000)
+        Checkpoint_Dataset(x, os.path.join(tmpdir.name, "ckp_test"), 1000, 2)
         for x in datasets2
     ]
 
@@ -1028,15 +1030,15 @@ def test_checkpoint_reload_match():
     # Continue iterating, verify matching behavior
     loaders2 = [
         torch.utils.data.DataLoader(
-            x, num_workers=1, batch_size=1, prefetch_factor=1, persistent_workers=True
+            x, num_workers=1, batch_size=2, prefetch_factor=1, persistent_workers=True
         )
         for x in datasets2
     ]
     loaders2 = [iter(x) for x in loaders2]
     for _ in range(300):
         for loader, loader2 in zip(loaders, loaders2):
-            out = next(loader2)
-            targ = next(loader)
+            out = sum(next(loader2))
+            targ = sum(next(loader))
             assert len(out) == len(
                 targ
             ), f"Expected same output lengths, got {len(out)}, {len(targ)}"

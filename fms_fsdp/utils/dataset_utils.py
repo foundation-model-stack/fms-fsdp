@@ -268,6 +268,9 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
         Absolute path to checkpoint load directory. If a checkpoint exists, loads it.
     interval : int
         Saves a new checkpoint every interval.
+    steps_per_batch : optional[int]
+        Number of steps required to fill a single batch. Increments interval only
+        when a full batch is formed. Defaults to 1.
     save_path : optional[str]
         Absolute path to checkpoint save directory. Defaults to load_path.
     """
@@ -277,24 +280,30 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
         dataset: _Stateful_Dataset,
         load_path: str,
         interval: int,
+        steps_per_batch: Optional[int] = 1,
         save_path: Optional[str] = "",
     ):
         super().__init__(dataset)
         self.interval = interval
+        self.spb = steps_per_batch
         if len(save_path) == 0:
             save_path = load_path
         self.path = save_path
         self.step = 0
+        self.ministep = 0
         self.load_from_path(load_path)
 
     def __iter__(self):
         dataset = iter(self.dataset)
         while True:
             yield next(dataset)
-            self.step += 1
-            if self.step % self.interval == 0:
-                newpath = os.path.join(self.path, "step_" + str(self.step) + "_ckp")
-                self.save_to_path(newpath)
+            self.ministep += 1
+            if self.ministep == self.spb:
+                self.ministep = 0
+                self.step += 1
+                if self.step % self.interval == 0:
+                    newpath = os.path.join(self.path, "step_" + str(self.step) + "_ckp")
+                    self.save_to_path(newpath)
 
     def load_from_path(self, path: str):
         # If path does not exist, do nothing
