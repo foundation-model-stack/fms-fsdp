@@ -1,5 +1,4 @@
 import torch
-from torch.utils.data.distributed import DistributedSampler
 
 from fms_fsdp.utils.dataset_utils import (
     Buffer_Dataset,
@@ -7,7 +6,6 @@ from fms_fsdp.utils.dataset_utils import (
     Preprocess_Dataset,
     Sampling_Dataset,
     Scalable_Shard_Dataset,
-    Streaming_Doc_Dataset,
 )
 
 

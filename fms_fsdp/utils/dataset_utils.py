@@ -264,19 +264,22 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
     ----
     dataset : _Stateful_Dataset
         Fully instantiated dataset
-    path : str
-        Absolute path to save/load directory. If a checkpoint exists, load it during construction.
-        Saves new checkpoints via step count.
+    load_path : str
+        Absolute path to checkpoint load directory. If a checkpoint exists, loads it.
     interval : int
         Saves a new checkpoint every interval.
+    save_path : optional[str]
+        Absolute path to checkpoint save directory. Defaults to load_path.
     """
 
-    def __init__(self, dataset: _Stateful_Dataset, path: str, interval: int):
+    def __init__(self, dataset: _Stateful_Dataset, load_path: str, interval: int, save_path: Optional[str] = ""):
         super().__init__(dataset)
         self.interval = interval
-        self.path = path
+        if len(save_path) == 0:
+            save_path = load_path
+        self.path = save_path
         self.step = 0
-        self.load_from_path(path)
+        self.load_from_path(load_path)
 
     def __iter__(self):
         dataset = iter(self.dataset)
