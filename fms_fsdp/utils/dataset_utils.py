@@ -10,6 +10,8 @@ import pyarrow as pa
 import torch
 import torch.utils.data as data
 
+from fms_fsdp.utils.checkpointing_utils import get_latest
+
 
 """
 The following distributed dataloaders are designed around 3 main principles:
@@ -250,6 +252,57 @@ class Preprocess_Dataset(_Wrapper_Dataset):
         while True:
             out = next(dataset)
             yield self.aug_fn(out)
+
+
+class Checkpoint_Dataset(_Wrapper_Dataset):
+    """
+    Wrapper for a _Stateful_Dataset that implements auto-checkpoint saving every n steps.
+    Useful for setting n_workers > 0, so that workers do not rely on the master process
+    for state saving (inter-process communication unsupported in PyTorch datasets).
+    ...
+    Args
+    ----
+    dataset : _Stateful_Dataset
+        Fully instantiated dataset
+    path : str
+        Absolute path to save/load directory. If a checkpoint exists, load it during construction.
+        Saves new checkpoints via step count.
+    interval : int
+        Saves a new checkpoint every interval.
+    """
+
+    def __init__(self, dataset: _Stateful_Dataset, path: str, interval: int):
+        super().__init__(dataset)
+        self.interval = interval
+        self.path = path
+        self.step = 0
+        self.load_from_path(path)
+
+    def __iter__(self):
+        dataset = iter(self.dataset)
+        while True:
+            yield next(dataset)
+            self.step += 1
+            if self.step % self.interval == 0:
+                newpath = os.path.join(self.path, "step_" + str(self.step) + "_ckp")
+                self.save_to_path(newpath)
+
+    def load_from_path(self, path: str):
+        # If path does not exist, do nothing
+        if not os.path.exists(path):
+            return
+        # If path exists but is empty, do nothing
+        if len(os.listdir(path)) == 0:
+            return
+        # Grab latest item in path
+        latest = get_latest(path)
+        # If item is not a folder, do nothing
+        if os.path.isfile(latest):
+            return
+        # If item is a folder, get the step count
+        self.step = int(latest.split("_")[-2])
+        # Proceed
+        self.dataset.load_from_path(latest)
 
 
 class Preload_Buffer_Dataset(_Wrapper_Dataset):

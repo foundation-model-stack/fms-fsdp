@@ -958,3 +958,87 @@ def test_preload_buffer_uniformity():
             outs.append(x)
 
     assert len(outs) > 95, f"Only {len(outs)} values <100 detected"
+
+
+# CHECKPOINT_DATASET TESTS
+
+
+def test_checkpoint_reload_match():
+    """
+    Check that the auto-checkpointer saves and loads correctly, and that loaded checkpoints
+    resume properly (matching the continued behavior of the saved ones)
+    """
+    datasets = [
+        Streaming_Doc_Dataset(
+            tmpdir.name,
+            i,
+            3,
+            -1,
+            datasets=["dataset_1", "dataset_2"],
+            weights=[3, 5],
+            max_chunksize=17,
+        )
+        for i in range(3)
+    ]
+    datasets = [
+        Checkpoint_Dataset(x, os.path.join(tmpdir.name, "ckp_test"), 100)
+        for x in datasets
+    ]
+    loaders = [
+        torch.utils.data.DataLoader(
+            x, num_workers=1, batch_size=1, prefetch_factor=1, persistent_workers=True
+        )
+        for x in datasets
+    ]
+    loaders = [iter(x) for x in loaders]
+    for _ in range(100):
+        for loader in loaders:
+            next(loader)
+
+    # Assert checkpoint exists and is properly formatted
+    ckps = os.listdir(os.path.join(tmpdir.name, "ckp_test"))
+    assert len(ckps) == 1, f"Expected only one checkpoint (found {len(ckps)})"
+    ckp_shards = os.listdir(os.path.join(tmpdir.name, "ckp_test", ckps[0]))
+    assert (
+        len(ckp_shards) == 3
+    ), f"Expected three checkpoint shards (found {len(ckp_shards)})"
+
+    # Create a second loader, pointing to first's checkpoint
+    datasets2 = [
+        Streaming_Doc_Dataset(
+            tmpdir.name,
+            i,
+            3,
+            -1,
+            datasets=["dataset_1", "dataset_2"],
+            weights=[3, 5],
+            max_chunksize=17,
+        )
+        for i in range(3)
+    ]
+    datasets2 = [
+        Checkpoint_Dataset(x, os.path.join(tmpdir.name, "ckp_test"), 1000)
+        for x in datasets2
+    ]
+
+    # Assert checkpoints have loaded correctly
+    for d in datasets2:
+        assert d.step == 100, f"Expected to load back to step 100, got {d.step}"
+
+    # Continue iterating, verify matching behavior
+    loaders2 = [
+        torch.utils.data.DataLoader(
+            x, num_workers=1, batch_size=1, prefetch_factor=1, persistent_workers=True
+        )
+        for x in datasets2
+    ]
+    loaders2 = [iter(x) for x in loaders2]
+    for _ in range(300):
+        for loader, loader2 in zip(loaders, loaders2):
+            out = next(loader2)
+            targ = next(loader)
+            assert len(out) == len(
+                targ
+            ), f"Expected same output lengths, got {len(out)}, {len(targ)}"
+            for i, (x, y) in enumerate(zip(out, targ)):
+                assert x == y, f"Mismatch in position {i}: got {x}, {y}"
