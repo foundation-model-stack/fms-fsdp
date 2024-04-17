@@ -272,7 +272,13 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
         Absolute path to checkpoint save directory. Defaults to load_path.
     """
 
-    def __init__(self, dataset: _Stateful_Dataset, load_path: str, interval: int, save_path: Optional[str] = ""):
+    def __init__(
+        self,
+        dataset: _Stateful_Dataset,
+        load_path: str,
+        interval: int,
+        save_path: Optional[str] = "",
+    ):
         super().__init__(dataset)
         self.interval = interval
         if len(save_path) == 0:
@@ -298,7 +304,7 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
         if len(os.listdir(path)) == 0:
             return
         # Grab latest item in path
-        latest = get_latest(path)
+        latest = os.path.join(path, get_latest(path))
         # If item is not a folder, do nothing
         if os.path.isfile(latest):
             return
@@ -306,6 +312,8 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
         self.step = int(latest.split("_")[-2])
         # Proceed
         self.dataset.load_from_path(latest)
+        if self.rank == 0:
+            print(f"Dataset checkpoint loaded from {latest}")
 
 
 class Preload_Buffer_Dataset(_Wrapper_Dataset):

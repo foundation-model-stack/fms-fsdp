@@ -2,6 +2,7 @@ import torch
 
 from fms_fsdp.utils.dataset_utils import (
     Buffer_Dataset,
+    Checkpoint_Dataset,
     Preload_Buffer_Dataset,
     Preprocess_Dataset,
     Sampling_Dataset,
@@ -90,8 +91,11 @@ def get_data_loader(cfg, rank, world_size):
     data = Preload_Buffer_Dataset(data, 10000)
     # Split line into input and target for the CLM task.
     data = Preprocess_Dataset(data, causal_lm)
-
-    return torch.utils.data.DataLoader(data, num_workers=0, batch_size=cfg.batch_size)
+    # Enable auto-saving
+    data = Checkpoint_Dataset(
+        data, cfg.ckpt_load_path, cfg.checkpoint_interval, cfg.ckpt_save_path
+    )
+    return torch.utils.data.DataLoader(data, num_workers=1, batch_size=cfg.batch_size)
 
 
 def parse_data_args(datas, weights):
