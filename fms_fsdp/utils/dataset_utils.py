@@ -286,8 +286,11 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
         super().__init__(dataset)
         self.interval = interval
         self.spb = steps_per_batch
+        load_path = os.path.join(load_path, "checkpoints")
         if len(save_path) == 0:
             save_path = load_path
+        else:
+            save_path = os.path.join(save_path, "checkpoints")
         self.path = save_path
         self.step = 0
         self.ministep = 0
