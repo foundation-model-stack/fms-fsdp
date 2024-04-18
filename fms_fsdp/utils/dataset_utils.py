@@ -280,8 +280,8 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
         dataset: _Stateful_Dataset,
         load_path: str,
         interval: int,
-        steps_per_batch: Optional[int] = 1,
-        save_path: Optional[str] = "",
+        steps_per_batch: int = 1,
+        save_path: str = "",
     ):
         super().__init__(dataset)
         self.interval = interval
