@@ -872,15 +872,16 @@ class Sampling_Dataset(_Stateful_Dataset):
         sharded_dicts = super().load_state_dict(state_dicts, sharded_input)
         # Load sub-iterator states
         for i, subdata in enumerate(self.data):
-            # Grab just that sub-iterator across all ranks
-            subdata.load_worldsize = self.load_worldsize
-            subdata.load_state_dict(
-                [
-                    sd[self.statename("sample_iterator_states")][i]
-                    for sd in sharded_dicts
-                ],
-                True,
-            )
+            if i < len(sharded_dicts[0][self.statename("sample_iterator_states")]):
+                # Grab just that sub-iterator across all ranks
+                subdata.load_worldsize = self.load_worldsize
+                subdata.load_state_dict(
+                    [
+                        sd[self.statename("sample_iterator_states")][i]
+                        for sd in sharded_dicts
+                    ],
+                    True,
+                )
         return sharded_dicts
 
 
