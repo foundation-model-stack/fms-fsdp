@@ -60,9 +60,13 @@ def main(**kwargs):
     setup_environ_flags()
 
     # get policy
-    mixed_precision_policy, wrapping_policy, sharding_strategy_policy = get_policies(
-        cfg, rank, LLaMABlock
-    )
+    (
+        mixed_precision_policy,
+        wrapping_policy,
+        sharding_strategy_policy,
+        apply_selective_ac,
+        param_init_fn,
+    ) = get_policies(cfg, rank, block)
 
     # get base model
     model = get_model(
