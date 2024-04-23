@@ -220,10 +220,10 @@ def main(**kwargs):
         train_loader,
         optimizer,
         scheduler,
-        profiler,
         checkpointer,
         start_step,
         tokens_seen,
+        profiler,
     )
 
     dist.barrier()
