@@ -75,7 +75,7 @@ def main(**kwargs):
         model_path=cfg.model_path,
         device_type="cuda",
         source="hf",
-        distributed_strategy=sharding_strategy_policy,
+        distributed_strategy=cfg.sharding_strategy,
     )
     model = model.bfloat16()
 
