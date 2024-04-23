@@ -205,7 +205,7 @@ def main(**kwargs):
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler
-    profiler = get_profiler(cfg)
+    profiler = get_profiler(cfg, rank)
 
     # Train
     if rank == 0:
