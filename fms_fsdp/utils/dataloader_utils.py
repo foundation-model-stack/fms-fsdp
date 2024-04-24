@@ -20,8 +20,6 @@ def get_dummy_loader(cfg, rank, world_size):
         # Spit out incremental counts of constant length l, modulo vocab size v
         def __init__(self, l, v):
             self.i = 0
-            self.rank = 0
-            self.worldsize = 1
             self.l = l
             self.v = v
 
@@ -33,9 +31,7 @@ def get_dummy_loader(cfg, rank, world_size):
                 yield out, out
                 self.i += self.l
 
-    data = SteadyCounter(
-        cfg.seq_length, 32000
-    )  # hardcode 32k vocab size since vocab size isn't available in the cfg
+    data = SteadyCounter(cfg.seq_length, cfg.vocab_size)
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
