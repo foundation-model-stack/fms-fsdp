@@ -5,7 +5,7 @@ import fire  # type: ignore
 import torch
 import torch.optim as optim
 from fms.models import get_model, register_model
-from fms.models.llama import LLaMAConfig, LLaMABlock
+from fms.models.llama import LLaMABlock, LLaMAConfig
 from fms_extras.models.speculator import MLPSpeculator  # type: ignore
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -66,7 +66,7 @@ def main(**kwargs):
         sharding_strategy_policy,
         apply_selective_ac,
         param_init_fn,
-    ) = get_policies(cfg, rank, block)
+    ) = get_policies(cfg, rank, LLaMABlock)
 
     # get base model
     model = get_model(
