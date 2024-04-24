@@ -55,6 +55,26 @@ def get_model_config(model_variant):
             nheads=16,
             nlayers=24,
         )
+    elif model_variant == "8b":
+        llama_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=4096,
+            nheads=32,
+            kvheads=8,
+            nlayers=32,
+            hidden_grow_factor=3.5,
+            max_expected_seq_len=8192,
+        )
+    elif model_variant == "8b_4k":
+        llama_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=4096,
+            nheads=32,
+            kvheads=8,
+            nlayers=32,
+            hidden_grow_factor=3.5,
+            max_expected_seq_len=4096,
+        )
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 
