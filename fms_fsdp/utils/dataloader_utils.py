@@ -31,9 +31,7 @@ def get_dummy_loader(cfg, rank, world_size):
                 yield out, out
                 self.i += self.l
 
-    data = SteadyCounter(
-        cfg.seq_length, cfg.vocab_size
-    )
+    data = SteadyCounter(cfg.seq_length, cfg.vocab_size)
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
