@@ -250,6 +250,7 @@ def train_speculator(
     loop_start = time.time()
     loss_fn = CrossEntropyLoss()
     elapsed_tokens = 0
+    train_loss = 5.0
     for batch_idx, input in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break

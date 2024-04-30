@@ -12,11 +12,11 @@ class train_config:
     # dataset and dataloader
     use_dummy_dataset: bool = False
     data_path: str = "/lustre/data"
-    seq_length: int = 4096
+    seq_length: int = 8192
     sep_token: int = 1
     datasets: str = "lang=en/dataset=commoncrawl,lang=en/dataset=webhose,lang=en/dataset=github_clean,lang=de/dataset=wikipedia,lang=es/dataset=wikipedia,lang=fr/dataset=wikipedia,lang=ja/dataset=wikipedia,lang=pt/dataset=wikipedia,lang=en/dataset=wikimedia,lang=en/dataset=uspto,lang=en/dataset=pubmedcentral,lang=en/dataset=arxiv,lang=en/dataset=stackexchange,lang=en/dataset=PG19"
     weights: str = "7700,500,550,28,17,22,25,8,100,500,175,250,100,25"
-    logical_shards: int = 768
+    logical_shards: int = 800
 
     # fsdp policies
     mixed_precision: bool = True
@@ -48,10 +48,10 @@ class train_config:
     use_torch_compile: bool = False
 
     # speculator training
-    model_path: str = "/lustre/base/ckpt/"
+    model_path: str = "/lustre/llama_weights/8B-llama3-hf"
     n_speculator_heads: int = 3
     speculator_width: int = 4096
     stage2_start_step: int = 15000
     stage2_prompt_length: int = 64
-    stage2_batch_size: int = 96
+    stage2_batch_size: int = 12
     stage2_seq_length: int = 256

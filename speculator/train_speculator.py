@@ -1,11 +1,17 @@
 import math
 import os
+import re
+from typing import Mapping
 
 import fire  # type: ignore
 import torch
 import torch.optim as optim
+from transformers import AutoTokenizer
+
 from fms.models import get_model, register_model
 from fms.models.llama import LLaMABlock, LLaMAConfig
+from fms.utils import serialization, generation, tokenizers
+from fms.utils.generation import generate
 from fms_extras.models.speculator import MLPSpeculator  # type: ignore
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -24,6 +30,60 @@ from fms_fsdp.utils.train_utils import (
 )
 from speculator.train_speculator_utils import EmbedLLaMA, train_speculator
 
+llama_3_config = LLaMAConfig(
+    src_vocab_size=128256,
+    emb_dim=4096,
+    norm_eps=1e-5,
+    nheads=32,
+    kvheads=8,
+    nlayers=32,
+    hidden_grow_factor=3.5,
+    multiple_of=1024,
+    max_expected_seq_len=8192,
+)
+
+def _hf_sd_to_fms_sd(hf_sd: Mapping) -> Mapping:
+    replacements = [
+        (r"^lm_head.weight", "shared.head.weight"),
+        (r"^model.embed_tokens.weight", "shared.emb.weight"),
+        (r"^model.norm", "dec_norm"),
+        (r"^model.layers", "layers"),
+        (r"self_attn\.k_proj", "attn.key"),
+        (r"self_attn\.v_proj", "attn.value"),
+        (r"self_attn\.q_proj", "attn.query"),
+        (r"self_attn\.o_proj", "attn.dense"),
+        (r"mlp\.gate_proj", "ff_sub_layer.wg"),
+        (r"mlp\.up_proj", "ff_sub_layer.w1"),
+        (r"mlp\.down_proj", "ff_sub_layer.w2"),
+        (r"input_layernorm", "ln"),
+        (r"post_attention_layernorm", "ff_ln"),
+    ]
+    new_sd = {}
+
+    trans_required_pattern = re.compile("layers.[0-9]+.attn.(query|key).weight")
+    for name, param in hf_sd.items():
+        new_name = name
+        for pattern, repl in replacements:
+            new_name = re.sub(pattern, repl, new_name)
+        new_sd[new_name] = param
+
+        # hf -> fms requires a transpose operation for the query and key
+        if bool(trans_required_pattern.match(new_name)):
+            temp = new_sd[new_name]
+            # nheads is used in the transformation required for hf->fms
+            # here we are using 128 as this value fits with all popular models
+            #   7B, 13B, 70B to recover the number of heads
+            nheads = int(temp.size(0) / 128)
+
+            temp = (
+                temp.view(nheads, 2, -1, temp.size(1))
+                .transpose(1, 2)
+                .reshape(*temp.size())
+            )
+
+            new_sd[new_name] = temp
+
+    return new_sd
 
 def _llama_factory_factory(config):
     def factory(**kwargs):
@@ -33,6 +93,8 @@ def _llama_factory_factory(config):
 
 
 register_model("embedllama", "7b", _llama_factory_factory(LLaMAConfig()))
+register_model("embedllama", "8b", _llama_factory_factory(llama_3_config))
+serialization.register_adapter("embedllama", "hf", _hf_sd_to_fms_sd)
 
 
 def main(**kwargs):
@@ -71,13 +133,51 @@ def main(**kwargs):
     # get base model
     model = get_model(
         "embedllama",
-        "7b",
-        model_path=cfg.model_path,
+        "8b",
+        model_path=f"{cfg.model_path}/*.safetensors",
         device_type="cuda",
         source="hf",
-        distributed_strategy=cfg.sharding_strategy,
+        # distributed_strategy=cfg.sharding_strategy,
     )
     model = model.bfloat16()
+    model = FSDP(
+        model,
+        auto_wrap_policy=wrapping_policy,
+        mixed_precision=mixed_precision_policy,
+        sharding_strategy=sharding_strategy_policy,
+        use_orig_params=cfg.use_torch_compile,
+        device_id=torch.cuda.current_device(),
+        limit_all_gathers=True,
+        sync_module_states=cfg.low_cpu_fsdp,
+        param_init_fn=lambda module: (
+            module.to_empty(device=torch.device("cuda"), recurse=False)
+            if cfg.low_cpu_fsdp
+            else None
+        ),
+    )
+
+    tokenizer = tokenizers.get_tokenizer(cfg.model_path)
+    template = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{}\n\n### Response:"
+
+    prompt = template.format(
+        "Provide a list of instructions for preparing chicken soup."
+    )
+    tokens = tokenizer.tokenize(prompt)
+    ids = tokenizer.convert_tokens_to_ids(tokens)
+    ids = [tokenizer.bos_token_id] + ids
+    ids = torch.tensor(ids, dtype=torch.long, device="cuda")
+    result = generation.generate(
+        model,
+        ids,
+        max_new_tokens=100,
+        use_cache=True,
+        do_sample=False,
+        max_seq_len=8192,
+    )
+    result = generation.truncate_after_eos(result, tokenizer.eos_token_id)
+    if rank == 0:
+        print("quick test of base model")
+        print(tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(result)))
 
     # get speculator
     speculator = MLPSpeculator(
@@ -87,6 +187,14 @@ def main(**kwargs):
         cfg.n_speculator_heads,
     )
     speculator.reset_parameters()
+
+    # initialize the speculator emb and head with the base models emb/head
+    # with torch.no_grad():
+    #     for i in range(speculator.n_predict):
+    #         speculator.emb[i] = model.shared.emb
+    #         speculator.head[i] = model.shared.head
+    #         speculator.emb[i].requires_grad_(False)
+    #         speculator.head[i].requires_grad_(False)
 
     # llama_config = get_model_config(cfg.model_variant)
 
