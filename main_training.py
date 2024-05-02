@@ -1,10 +1,13 @@
 import math
 import os
+from pathlib import Path
 
 import fire
 import torch
 import torch.optim as optim
-from fms.models.llama import LLaMA, LLaMABlock
+from mamba_ssm.models.config_mamba import MambaConfig
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.modules.mamba_simple import Block
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
@@ -44,9 +47,12 @@ def main(**kwargs):
     torch.cuda.set_device(local_rank)
     torch.cuda.empty_cache()
     setup_environ_flags()
+    os.environ["TRITON_CACHE_DIR"] = os.path.join(
+        Path.home(), ".triton", "cache", str(local_rank)
+    )
 
     # get policy
-    block = LLaMABlock
+    block = Block
     (
         mixed_precision_policy,
         wrapping_policy,
@@ -56,13 +62,37 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, block)
 
     # get fms model
-    llama_config = get_model_config(cfg.model_variant)
-    if cfg.low_cpu_fsdp:
-        with torch.device("meta"):
-            model = LLaMA(llama_config)
+    if cfg.model_variant == "1.4b":
+        config_data = {
+            "d_model": 2048,
+            "n_layer": 48,
+            "vocab_size": cfg.vocab_size,
+            "ssm_cfg": {},
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 8,
+        }
+    elif cfg.model_variant == "7b":
+        config_data = {
+            "d_model": 4096,
+            "n_layer": 64,
+            "vocab_size": cfg.vocab_size,
+            "ssm_cfg": {},
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 8,
+        }
     else:
-        model = LLaMA(llama_config)
-        model.reset_parameters()
+        raise ValueError(f"model variant {cfg.model_variant} not supported.")
+    mamba_config = MambaConfig(**config_data)
+    if cfg.low_cpu_fsdp:
+        raise ValueError(
+            "For unknown reason, low_cpu_mode will make Mamba model hangs. Please disable low_cpu_mode."
+        )
+    else:
+        model = MambaLMHeadModel(mamba_config)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -88,11 +118,6 @@ def main(**kwargs):
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
-    )
-    # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
-    model.rot_emb.compute_freqs_cis(
-        torch.device("cuda", torch.cuda.current_device()),
-        model.config.max_expected_seq_len,
     )
 
     # fsdp activation checkpointing
@@ -127,11 +152,12 @@ def main(**kwargs):
 
     # LR schedule
     warmup_interval = min(2000, cfg.num_steps // 20)
+    decay_factor = 1e-5 / cfg.learning_rate
     schedule = lambda x: min(
         1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-        0.1
+        decay_factor
         + 0.5
-        * (1 - 0.1)
+        * (1 - decay_factor)
         * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
     )
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
