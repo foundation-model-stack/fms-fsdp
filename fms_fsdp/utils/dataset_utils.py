@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+import time
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Sized, Type, Union
 
@@ -308,24 +309,46 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
                     newpath = os.path.join(self.path, "step_" + str(self.step) + "_ckp")
                     self.save_to_path(newpath)
 
+    def save_to_path(self, path: str):
+        if self.rank == 0:
+            print(f"Saving dataset to {path}")
+        start = time.time()
+        super().save_to_path(path)
+        if self.rank == 0:
+            print(
+                f"Dataset successfully saved to {path}! Save time: {time.time() - start}"
+            )
+
     def load_from_path(self, path: str):
+        failure = False
         # If path does not exist, do nothing
         if not os.path.exists(path):
-            return
+            failure = True
         # If path exists but is empty, do nothing
         if len(os.listdir(path)) == 0:
-            return
+            failure = True
         # Grab latest item in path
         latest = os.path.join(path, get_latest(path))
         # If item is not a folder, do nothing
         if os.path.isfile(latest):
+            failure = True
+        if failure:
+            if self.rank == 0:
+                print(
+                    f"No valid checkpoint detected at {path}, dataset starting from scratch."
+                )
             return
         # If item is a folder, get the step count
         self.step = int(latest.split("_")[-2])
+        if self.rank == 0:
+            print(f"Dataset checkpoint detected in {path}, loading...")
         # Proceed
+        start = time.time()
         self.dataset.load_from_path(latest)
         if self.rank == 0:
-            print(f"Dataset checkpoint loaded from {latest}")
+            print(
+                f"Dataset checkpoint loaded from {latest}! Load time: {time.time() - start}"
+            )
 
 
 class Preload_Buffer_Dataset(_Wrapper_Dataset):
