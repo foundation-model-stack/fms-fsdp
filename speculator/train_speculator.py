@@ -97,6 +97,8 @@ register_model("embedllama", "8b", _llama_factory_factory(llama_3_config))
 serialization.register_adapter("embedllama", "hf", _hf_sd_to_fms_sd)
 
 
+
+
 def main(**kwargs):
     # get configs
     cfg = config.train_config()
@@ -164,7 +166,8 @@ def main(**kwargs):
     )
     tokens = tokenizer.tokenize(prompt)
     ids = tokenizer.convert_tokens_to_ids(tokens)
-    ids = [tokenizer.bos_token_id] + ids
+    # include this line for embedllama
+    #ids = [tokenizer.bos_token_id] + ids
     ids = torch.tensor(ids, dtype=torch.long, device="cuda")
     result = generation.generate(
         model,

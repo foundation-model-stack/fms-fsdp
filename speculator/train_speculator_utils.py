@@ -1,17 +1,21 @@
 import os
 import time
-from typing import Any, Callable, MutableMapping, Optional, Tuple, Union
-
+from typing import Any, Callable, MutableMapping, Optional, Tuple, Union, Mapping
+import re
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-from fms.models.gpt_bigcode import GPTBigCode
+
+from fms.models import register_model
+from fms.models.gpt_bigcode import GPTBigCode, GPTBigCodeConfig, _hf_sd_to_fms_sd
 from fms.models.llama import LLaMA
+from fms.utils import serialization
 from fms.utils.generation import _make_cache_contiguous
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 
+from fms_extras.models.calico import Calico, CalicoConfig
 from fms_fsdp.config import train_config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 
@@ -396,3 +400,177 @@ class EmbedLLaMA(LLaMA):
         if len(out) == 1:
             return out[0]
         return out
+
+class EmbedCalico(Calico):
+
+    def forward(
+        self,
+        x,
+        mask=None,
+        position_ids=None,
+        past_key_value_states=None,
+        use_cache=False,
+        only_last_token=False,
+        attn_algorithm=None,
+        include_embeds=False,
+    ):
+        output, cache = self._helper(
+            x, mask, position_ids, past_key_value_states, use_cache, attn_algorithm
+        )
+
+        if only_last_token:
+            output = output[:, -1, :]
+        preds = self.shared(output, reverse=True)
+
+        out = [preds]
+        if use_cache:
+            out.append(cache)
+        if include_embeds:
+            out.append(output)
+        if len(out) == 1:
+            return out[0]
+        return out
+
+def _calico_factory_factory(config):
+    def factory(**kwargs):
+        return EmbedCalico(config, **kwargs)
+
+    return factory
+
+def _gpt_bigcode_factory_factory(config):
+    def factory(**kwargs):
+        return EmbedGPTBigCode(config, **kwargs)
+
+    return factory
+
+_gpt_bigcode_20b_config = GPTBigCodeConfig(
+    src_vocab_size=49152,
+    emb_dim=6144,
+    nheads=48,
+    nlayers=52,
+    pad_id=0,
+    max_expected_seq_len=8192,
+    hidden_grow_factor=24576/6144,
+    p_dropout=0.1,
+    emb_dropout=0.1,
+    ln_eps=1e-5,
+)
+
+_gpt_bigcode_34b_config = GPTBigCodeConfig(
+    src_vocab_size=49152,
+    emb_dim=6144,
+    nheads=48,
+    nlayers=88,
+    pad_id=0,
+    max_expected_seq_len=8192,
+    hidden_grow_factor=24576/6144,
+    p_dropout=0.1,
+    emb_dropout=0.1,
+    ln_eps=1e-5,
+)
+
+_calico_3b_config = CalicoConfig(
+    src_vocab_size=49152,
+    emb_dim=2560,
+    nheads=32,
+    kvheads=32,
+    nlayers=32,
+    pad_id=0,
+    hidden_grow_factor=10240 / 2560,
+    multiple_of=1,
+    max_expected_seq_len=2048
+)
+
+_calico_8b_config = CalicoConfig(
+    src_vocab_size=49152,
+    emb_dim=4096,
+    nheads=32,
+    kvheads=8,
+    nlayers=36,
+    pad_id=0,
+    hidden_grow_factor=14336 / 4096,
+    multiple_of=1,
+    max_expected_seq_len=4096,
+)
+
+def _calico_hf_sd_to_fms_sd(hf_sd: Mapping) -> Mapping:
+    replacements = [
+        (r"^lm_head.weight", "shared.head.weight"),
+        (r"^model.embed_tokens.weight", "shared.emb.weight"),
+        (r"^model.norm", "dec_norm"),
+        (r"^model.layers", "layers"),
+        (r"self_attn\.k_proj", "attn.key"),
+        (r"self_attn\.v_proj", "attn.value"),
+        (r"self_attn\.q_proj", "attn.query"),
+        (r"self_attn\.o_proj", "attn.dense"),
+        (r"mlp\.gate_proj", "ff_sub_layer.wg"),
+        (r"mlp\.up_proj", "ff_sub_layer.w1"),
+        (r"mlp\.down_proj", "ff_sub_layer.w2"),
+        (r"input_layernorm", "ln"),
+        (r"post_attention_layernorm", "ff_ln"),
+    ]
+    new_sd = {}
+
+    trans_required_pattern = re.compile("layers.[0-9]+.attn.(query|key).weight")
+    trans_required_bias_pattern = re.compile("layers.[0-9]+.attn.(query|key).bias")
+    for name, param in hf_sd.items():
+        new_name = name
+        for pattern, repl in replacements:
+            new_name = re.sub(pattern, repl, new_name)
+        new_sd[new_name] = param
+
+        # hf -> fms requires a transpose operation for the query and key
+        if bool(trans_required_pattern.match(new_name)):
+            temp = new_sd[new_name]
+
+            emb_dim = param.size(1)
+            if emb_dim == 2560:
+                head_size = 80
+            else:
+                head_size = 128
+
+            # nheads is used in the transformation required for hf->fms
+            # here we are using 128 as this value fits with all popular models
+            #   7B, 13B, 70B to recover the number of heads
+            nheads = int(temp.size(0) / head_size)
+
+            temp = (
+                temp.view(nheads, 2, -1, temp.size(1))
+                .transpose(1, 2)
+                .reshape(*temp.size())
+            )
+
+            new_sd[new_name] = temp
+        elif bool(trans_required_bias_pattern.match(new_name)):
+            weight_name = name.replace("bias", "weight")
+
+            emb_dim = hf_sd[weight_name].size(1)
+            if emb_dim == 2560:
+                head_size = 80
+            else:
+                head_size = 128
+
+            temp = new_sd[new_name]
+            # nheads is used in the transformation required for hf->fms
+            # here we are using 128 as this value fits with all popular models
+            #   7B, 13B, 70B to recover the number of heads
+            nheads = int(temp.size(0) / head_size)
+
+            temp = (
+                temp.view(nheads, 2, -1)
+                .transpose(1, 2)
+                .reshape(*temp.size())
+            )
+
+            new_sd[new_name] = temp
+
+    return new_sd
+
+register_model("embedgpt_bigcode", "20b", _gpt_bigcode_factory_factory(_gpt_bigcode_20b_config))
+register_model("embedgpt_bigcode", "34b", _gpt_bigcode_factory_factory(_gpt_bigcode_34b_config))
+serialization.register_adapter("embedgpt_bigcode", "hf", _hf_sd_to_fms_sd)
+
+
+register_model("embedcalico", "3b", _calico_factory_factory(_calico_3b_config))
+register_model("embedcalico", "8b", _calico_factory_factory(_calico_8b_config))
+serialization.register_adapter("embedcalico", "hf", _calico_hf_sd_to_fms_sd)
