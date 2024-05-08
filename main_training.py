@@ -62,7 +62,7 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, block)
 
     # get fms model
-    if cfg.model_variant == "1.4b":
+    if cfg.model_variant == "mamba_1.5b":
         config_data = {
             "d_model": 2048,
             "n_layer": 48,
@@ -73,7 +73,7 @@ def main(**kwargs):
             "fused_add_norm": True,
             "pad_vocab_size_multiple": 8,
         }
-    elif cfg.model_variant == "7b":
+    elif cfg.model_variant == "mamba_7b":
         config_data = {
             "d_model": 4096,
             "n_layer": 64,
