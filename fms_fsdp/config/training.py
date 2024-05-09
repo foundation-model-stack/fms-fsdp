@@ -47,3 +47,12 @@ class train_config:
 
     # compile
     use_torch_compile: bool = True
+
+    # speculator training
+    model_path: str = "/lustre/base/ckpt/"
+    n_speculator_heads: int = 3
+    speculator_width: int = 4096
+    stage2_start_step: int = 15000
+    stage2_prompt_length: int = 64
+    stage2_batch_size: int = 96
+    stage2_seq_length: int = 256

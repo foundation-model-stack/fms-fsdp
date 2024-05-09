@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
-from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
+from fms_fsdp.utils.dataloader_utils import causal_lm, get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
     get_profiler,
@@ -72,7 +72,7 @@ def main(**kwargs):
     if rank == 0:
         print("Constructing datasets...")
     if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg, rank, world_size)
+        train_loader = get_data_loader(cfg, rank, world_size, postprocess=[causal_lm])
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:
