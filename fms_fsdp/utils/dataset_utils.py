@@ -3,12 +3,15 @@ import logging
 import math
 import os
 import random
+import time
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Sized, Type, Union
 
 import pyarrow as pa
 import torch
 import torch.utils.data as data
+
+from fms_fsdp.utils.checkpointing_utils import get_latest
 
 
 """
@@ -250,6 +253,98 @@ class Preprocess_Dataset(_Wrapper_Dataset):
         while True:
             out = next(dataset)
             yield self.aug_fn(out)
+
+
+class Checkpoint_Dataset(_Wrapper_Dataset):
+    """
+    Wrapper for a _Stateful_Dataset that implements auto-checkpoint saving every n steps.
+    Useful for setting n_workers > 0, so that workers do not rely on the master process
+    for state saving (inter-process communication unsupported in PyTorch datasets).
+    ...
+    Args
+    ----
+    dataset : _Stateful_Dataset
+        Fully instantiated dataset
+    load_path : str
+        Absolute path to checkpoint load directory. If a checkpoint exists, loads it.
+    interval : int
+        Saves a new checkpoint every interval.
+    steps_per_batch : optional[int]
+        Number of steps required to fill a single batch. Increments interval only
+        when a full batch is formed. Defaults to 1.
+    save_path : optional[str]
+        Absolute path to checkpoint save directory. Defaults to load_path.
+    """
+
+    def __init__(
+        self,
+        dataset: _Stateful_Dataset,
+        load_path: str,
+        interval: int,
+        steps_per_batch: int = 1,
+        save_path: str = "",
+    ):
+        super().__init__(dataset)
+        self.interval = interval
+        self.spb = steps_per_batch
+        load_path = os.path.join(load_path, "checkpoints")
+        if len(save_path) == 0:
+            save_path = load_path
+        else:
+            save_path = os.path.join(save_path, "checkpoints")
+        self.path = save_path
+        self.step = 0
+        self.ministep = 0
+        self.load_from_path(load_path)
+
+    def __iter__(self):
+        dataset = iter(self.dataset)
+        while True:
+            yield next(dataset)
+            self.ministep += 1
+            if self.ministep == self.spb:
+                self.ministep = 0
+                self.step += 1
+                if self.step % self.interval == 0:
+                    newpath = os.path.join(self.path, "step_" + str(self.step) + "_ckp")
+                    self.save_to_path(newpath)
+
+    def save_to_path(self, path: str):
+        if self.rank == 0:
+            print(f"Saving dataset to {path}")
+        start = time.time()
+        super().save_to_path(path)
+        if self.rank == 0:
+            print(
+                f"Dataset successfully saved to {path}! Save time: {time.time() - start}"
+            )
+
+    def load_from_path(self, path: str):
+        # If path does not exist, or exists but is empty, exit early
+        if not os.path.exists(path) or len(os.listdir(path)) == 0:
+            if self.rank == 0:
+                print(
+                    f"No valid checkpoint detected at {path}, dataset starting from scratch."
+                )
+            return
+        # Grab latest item in path
+        latest = os.path.join(path, get_latest(path))
+        if self.rank == 0:
+            print(f"Dataset checkpoint detected at {latest}")
+        # If item is not a folder, exit early
+        if os.path.isfile(latest):
+            if self.rank == 0:
+                print(
+                    f"Checkpoint exists but contains no dataset! Dataset starting from scratch."
+                )
+            return
+        # If item is a folder, get the step count
+        self.step = int(latest.split("_")[-2])
+        # Proceed
+        start = time.time()
+        self.dataset.load_from_path(latest)
+        if self.rank == 0:
+            print(f"Dataset checkpoint loaded! Load time: {time.time() - start}")
 
 
 class Preload_Buffer_Dataset(_Wrapper_Dataset):
