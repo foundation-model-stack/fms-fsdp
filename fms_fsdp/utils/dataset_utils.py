@@ -764,13 +764,12 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             else:
                 start_index -= 1
         chunk = doc.slice(start_index, n_pull).to_pylist()
+        self.dataset_tokens_seen[dataset] += len(chunk)
+        # Add bos/eos tokens if needed
         if self.bos is not None and j == 0:
             chunk = [self.bos] + chunk
         if j == n_chunks - 1:
-            chunk = chunk + [
-                self.eos
-            ]  # Add delimiter token to signify end of document (used upstream)
-        self.dataset_tokens_seen[dataset] += len(chunk)
+            chunk = chunk + [self.eos]
         return chunk
 
     def _random_map_docid(self, size):
