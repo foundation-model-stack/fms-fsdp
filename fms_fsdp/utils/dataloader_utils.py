@@ -80,7 +80,6 @@ def get_data_loader(cfg, rank, world_size):
     data = Buffer_Dataset(
         data,
         cfg.seq_length + 1,
-        drop_final_token=cfg.sep_token,
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
