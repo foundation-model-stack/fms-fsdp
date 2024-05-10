@@ -555,8 +555,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
     worldsize : int
         Total number of workers
     delimiter_token : Any
-        Token used to indicate sequence/document breaks. Type should match data type. Required for
-        downstream sampling logic (can be removed later via Buffer_Dataset).
+        Token used to indicate sequence/document breaks. Type should match data type. Required for downstream
+        sampling logic (can be removed later via PreProcess_Dataset or Buffer_Dataset's drop_final_token flag).
     bos_token : Any | None
         Optional token used to indicate sequence/document start. Type should match data type.
     datasets : list[str] | None
