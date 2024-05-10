@@ -260,7 +260,7 @@ class Checkpointer:
         with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
             model_state = model.state_dict()
             optim_state = FSDP.sharded_optim_state_dict(model, optimizer)
-        dataloader_state = dataloader.dataset
+        dataloader_state = None if dataloader is None else dataloader.dataset
 
         save_name = os.path.join(self.ckp_path, "step_" + str(step) + "_ckp")
         state_dict = {"model_state": model_state, "optimizer_state": optim_state}

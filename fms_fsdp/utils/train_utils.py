@@ -170,7 +170,7 @@ def train(
                 batch_idx,
                 model,
                 optimizer,
-                train_loader,
+                None,
                 tokens_seen=tokens_seen + new_tokens_seen,
             )
 
