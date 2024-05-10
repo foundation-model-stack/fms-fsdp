@@ -17,7 +17,7 @@ class train_config:
     seq_length: int = 4096
     vocab_size: int = 32000
     bos_token: Optional[int] = None
-    eos_token: Optional[int] = None
+    eos_token: int = 0
     logical_shards: int = 1024
 
     # fsdp policies
