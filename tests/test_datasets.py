@@ -343,11 +343,55 @@ def reload_single_epoch_check(loader):
     ), f"Full epoch output contains {len(ins)} values but only {len(set(ins))} unique"
 
 
+def single_doc_bos_eos_check(loader, do_bos):
+    # Single shard, single loader: load two chunks, verify that sizes match when BOS is on/off
+    expected_vals = (
+        [
+            [99, 3],
+            [100, 2],
+            [101, 1],
+            [102, 102],
+            [102, 102],
+        ]
+        if do_bos
+        else [
+            [99, 2],
+            [100, 1],
+            [101, 101],
+            [101, 101],
+            [101, 101],
+        ]
+    )
+    for i, c in enumerate([99, 100, 101, 102, 103]):
+        dataset = loader(
+            rank=0, worldsize=1, max_chunksize=c, bos_token=100 if do_bos else None
+        )
+        d = iter(dataset)
+        for _ in range(10):
+            c1 = next(d)
+            c2 = next(d)
+            assert (
+                len(c1) == expected_vals[i][0]
+            ), f"Expected size {expected_vals[i][0]} in first chunk, got {len(c1)}"
+            assert (
+                len(c2) == expected_vals[i][1]
+            ), f"Expected size {expected_vals[i][1]} in second chunk, got {len(c2)}"
+            if c == 99:
+                assert (
+                    c1[-1] == c2[0] - 1
+                ), f"Expected chunk 2 to follow chunk1, got {c1[-1]} and {c2[0]}"
+
+
 # BASE DATASET TESTS
 
 
 def basic_loader(
-    rank=0, worldsize=1, datasets=["dataset_1"], weights=[1], max_chunksize=1000
+    rank=0,
+    worldsize=1,
+    datasets=["dataset_1"],
+    weights=[1],
+    max_chunksize=1000,
+    bos_token=None,
 ):
     return Streaming_Doc_Dataset(
         tmpdir.name,
@@ -357,6 +401,7 @@ def basic_loader(
         datasets=datasets,
         weights=weights,
         max_chunksize=max_chunksize,
+        bos_token=bos_token,
     )
 
 
@@ -382,6 +427,7 @@ def basic_scalable(
     weights=[1],
     max_chunksize=1000,
     n_logical_shards=7,
+    bos_token=None,
 ):
     return Scalable_Shard_Dataset(
         tmpdir.name,
@@ -392,6 +438,7 @@ def basic_scalable(
         weights=weights,
         max_chunksize=max_chunksize,
         n_logical_shards=n_logical_shards,
+        bos_token=bos_token,
     )
 
 
@@ -469,6 +516,14 @@ def test_reload_complete_epoch():
     # Skip scalable loaders as epoch 2 may sample workers differently from epoch 1
     reload_single_epoch_check(basic_loader)
     reload_single_epoch_check(basic_sampler)
+
+
+def test_eos_bos_chunking():
+    # Single shard, single loader: check that enabling/disabling bos tokens maintains correct chunking behavior
+    single_doc_bos_eos_check(basic_loader, False)
+    single_doc_bos_eos_check(basic_loader, True)
+    single_doc_bos_eos_check(basic_scalable, False)
+    single_doc_bos_eos_check(basic_scalable, True)
 
 
 # SUBDATASET WEIGHTING CHECKS
