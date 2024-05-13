@@ -597,6 +597,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.docset: List[
             Any
         ] = []  # map of doc indices to (shardid, min docid, max docid)
+        self.docs_per_shard = {}
 
         # Guaranteed inconsistent shuffling across workers
         random.seed(self.seed + rank)
@@ -734,7 +735,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             else:
                 start_index -= 1
         chunk = doc.slice(start_index, n_pull).to_pylist()
-        self.dataset_tokens_seen[dataset] += len(chunk)
+        self.tokens_seen += len(chunk)
         # Add bos/eos tokens if needed
         if self.bos is not None and j == 0:
             chunk = [self.bos] + chunk
@@ -1054,7 +1055,9 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
                 ind = self.current_reader
             else:
                 ind = torch.multinomial(
-                    torch.tensor(self.n_docs_remaining), 1, generator=self.generator
+                    torch.tensor(self.n_docs_remaining, dtype=torch.float),
+                    1,
+                    generator=self.generator,
                 ).item()
             self.current_reader = ind
             # Read doc
@@ -1067,6 +1070,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
             self.n_docs_remaining[ind] -= 1
             if sum(self.n_docs_remaining) == 0:
                 self.n_docs_remaining = [d._len for d in self.data]
+                self.generator.manual_seed(self.rank)
             # Return final piece of doc
             yield out
 
