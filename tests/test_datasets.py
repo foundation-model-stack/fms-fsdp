@@ -681,26 +681,23 @@ def test_scalable_partitioning():
 
         kwargs = {
             "n_logical_shards": 12,
-            "datasets": ["dataset_1"],
-            "weights": [1],
             "max_chunksize": 200,
+            "delimiter_token": -1,
         }
         for worldsize in [1, 2, 3, 6, 12]:
             datasets = [
                 layer(
-                    tmpdir.name,
+                    src,
                     Scalable_Shard_Dataset,
                     i,
                     worldsize,
-                    -1,
                     **kwargs,
                 )
                 if layer == Sampling_Dataset
                 else layer(
-                    tmpdir.name,
+                    src,
                     i,
                     worldsize,
-                    -1,
                     **kwargs,
                 )
                 for i in range(worldsize)
