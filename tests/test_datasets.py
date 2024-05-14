@@ -691,6 +691,7 @@ def test_scalable_partitioning():
                     Scalable_Shard_Dataset,
                     i,
                     worldsize,
+                    datasets=["dataset_1"],
                     **kwargs,
                 )
                 if layer == Sampling_Dataset

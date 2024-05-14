@@ -309,42 +309,41 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
                     newpath = os.path.join(self.path, "step_" + str(self.step) + "_ckp")
                     self.save_to_path(newpath)
 
-    def save_to_path(self, path: str):
+    def report(self, msg):
         if self.rank == 0:
+            print(msg)
+
+    def save_to_path(self, path: str):
+        if self.verbose:
             print(f"Saving dataset to {path}")
         start = time.time()
         super().save_to_path(path)
-        if self.rank == 0:
-            print(
-                f"Dataset successfully saved to {path}! Save time: {time.time() - start}"
-            )
+        self.report(
+            f"Dataset successfully saved to {path}! Save time: {time.time() - start}"
+        )
 
     def load_from_path(self, path: str):
         # If path does not exist, or exists but is empty, exit early
         if not os.path.exists(path) or len(os.listdir(path)) == 0:
-            if self.rank == 0:
-                print(
-                    f"No valid checkpoint detected at {path}, dataset starting from scratch."
-                )
+            self.report(
+                f"No valid checkpoint detected at {path}, dataset starting from scratch."
+            )
             return
         # Grab latest item in path
         latest = os.path.join(path, get_latest(path))
-        if self.rank == 0:
-            print(f"Dataset checkpoint detected at {latest}")
+        self.report(f"Dataset checkpoint detected at {latest}")
         # If item is not a folder, exit early
         if os.path.isfile(latest):
-            if self.rank == 0:
-                print(
-                    f"Checkpoint exists but contains no dataset! Dataset starting from scratch."
-                )
+            self.report(
+                f"Checkpoint exists but contains no dataset! Dataset starting from scratch."
+            )
             return
         # If item is a folder, get the step count
         self.step = int(latest.split("_")[-2])
         # Proceed
         start = time.time()
         self.dataset.load_from_path(latest)
-        if self.rank == 0:
-            print(f"Dataset checkpoint loaded! Load time: {time.time() - start}")
+        self.report(f"Dataset checkpoint loaded! Load time: {time.time() - start}")
 
 
 class Preload_Buffer_Dataset(_Wrapper_Dataset):
