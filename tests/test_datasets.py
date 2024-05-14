@@ -661,8 +661,13 @@ def test_scalable_partitioning():
             "worldsize": 4,
             "delimiter_token": -1,
         }
+        src = (
+            tmpdir.name
+            if layer == Sampling_Dataset
+            else os.path.join(tmpdir.name, "dataset_1")
+        )
         datasets = [
-            layer(tmpdir.name, Scalable_Shard_Dataset, i, datasets=["dataset_1"], **kwargs)
+            layer(src, Scalable_Shard_Dataset, i, datasets=["dataset_1"], **kwargs)
             if layer == Sampling_Dataset
             else layer(tmpdir.name, i, **kwargs)
             for i in range(4)

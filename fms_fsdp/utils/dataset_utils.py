@@ -610,7 +610,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         ]
         assert len(countfiles) == 1
         doc_counts = {}
-        pathsplit = [datapath, ""]
+        pathsplit = (datapath, "")
         while len(pathsplit[1]) == 0:
             pathsplit = os.path.split(pathsplit[0])
         pardir, dataset = pathsplit
