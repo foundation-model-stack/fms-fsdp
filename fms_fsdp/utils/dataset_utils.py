@@ -749,7 +749,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         """
         m = 2 ** math.ceil(math.log2(size))  # Round up to nearest power of 2
         a = 5  # A,C values known to work well with powers of 2 (Knuth, 1997, 3.2.1.3)
-        c = self.rank * 2 + 1
+        c = (self.rank + self.seed) * 2 + 1
         state = self.lcg_state
         while True:
             state = (a * state + c) % m
