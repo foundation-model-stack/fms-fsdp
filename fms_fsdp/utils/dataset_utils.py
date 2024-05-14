@@ -305,6 +305,7 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
             if self.ministep == self.spb:
                 self.ministep = 0
                 self.step += 1
+                print(self.rank, self.step, self.interval)
                 if self.step % self.interval == 0:
                     newpath = os.path.join(self.path, "step_" + str(self.step) + "_ckp")
                     self.save_to_path(newpath)
@@ -314,8 +315,7 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
             print(msg)
 
     def save_to_path(self, path: str):
-        if self.verbose:
-            print(f"Saving dataset to {path}")
+        self.report(f"Saving dataset to {path}")
         start = time.time()
         super().save_to_path(path)
         self.report(
