@@ -657,14 +657,14 @@ def test_scalable_partitioning():
     for layer in [Scalable_Shard_Dataset, Sampling_Dataset]:
         kwargs = {
             "n_logical_shards": 12,
-            "datasets": ["dataset_1"],
-            "weights": [1],
             "max_chunksize": 200,
+            "worldsize": 4,
+            "delimiter_token": -1,
         }
         datasets = [
-            layer(tmpdir.name, Scalable_Shard_Dataset, i, 4, -1, **kwargs)
+            layer(tmpdir.name, Scalable_Shard_Dataset, i, datasets=["dataset_1"], **kwargs)
             if layer == Sampling_Dataset
-            else layer(tmpdir.name, i, 4, -1, **kwargs)
+            else layer(tmpdir.name, i, **kwargs)
             for i in range(4)
         ]  # 25 steps per epoch
         loaders = [iter(d) for d in datasets]
@@ -735,13 +735,11 @@ def test_scalable_shard_reload_scale():
     """
     datasets = [
         Scalable_Shard_Dataset(
-            tmpdir.name,
+            os.path.join(tmpdir.name, "dataset_1"),
             i,
             2,
             -1,
             n_logical_shards=8,
-            datasets=["dataset_1"],
-            weights=[1],
             max_chunksize=40,
         )
         for i in range(2)
@@ -760,13 +758,11 @@ def test_scalable_shard_reload_scale():
 
     datasets2 = [
         Scalable_Shard_Dataset(
-            tmpdir.name,
+            os.path.join(tmpdir.name, "dataset_1"),
             i,
             4,
             -1,
             n_logical_shards=8,
-            datasets=["dataset_1"],
-            weights=[1],
             max_chunksize=40,
         )
         for i in range(4)
@@ -977,8 +973,9 @@ def test_checkpoint_reload_match():
     resume properly (matching the continued behavior of the saved ones)
     """
     datasets = [
-        Streaming_Doc_Dataset(
+        Sampling_Dataset(
             tmpdir.name,
+            Streaming_Doc_Dataset,
             i,
             3,
             -1,
@@ -1016,8 +1013,9 @@ def test_checkpoint_reload_match():
 
     # Create a second loader, pointing to first's checkpoint
     datasets2 = [
-        Streaming_Doc_Dataset(
+        Sampling_Dataset(
             tmpdir.name,
+            Streaming_Doc_Dataset,
             i,
             3,
             -1,
