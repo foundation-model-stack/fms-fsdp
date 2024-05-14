@@ -669,7 +669,7 @@ def test_scalable_partitioning():
         datasets = [
             layer(src, Scalable_Shard_Dataset, i, datasets=["dataset_1"], **kwargs)
             if layer == Sampling_Dataset
-            else layer(tmpdir.name, i, **kwargs)
+            else layer(src, i, **kwargs)
             for i in range(4)
         ]  # 25 steps per epoch
         loaders = [iter(d) for d in datasets]
