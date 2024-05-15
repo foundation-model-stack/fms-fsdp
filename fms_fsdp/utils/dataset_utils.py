@@ -423,8 +423,8 @@ class Buffer_Dataset(_Wrapper_Dataset):
     Wrapper for a _Stateful_Dataset that takes in sequences of varying lengths, and packs/pads them
     into sequences of desired length. Input sequences are packed greedily until the buffer would
     otherwise overrun, then remaining values are filled depending on initialization flags.
-    Also injects BOS/EOS into the output sequence if desired, and if BOS/EOS tokens are not
-    already in those positions. Implements rescaling by simply dropping (buffer) state.
+    Also injects BOS/EOS into the packed output sequence if desired, and if BOS/EOS tokens are
+    not already in those positions. Implements rescaling by simply dropping (buffer) state.
     ...
     Args
     ----
@@ -555,7 +555,10 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
     worldsize : int
         Total number of workers
     delimiter_token : Any
-        Token used to indicate sequence/document breaks. Type should match data type.
+        Token used to indicate sequence/document breaks. Type should match data type. Required for downstream
+        sampling logic (can be removed later via PreProcess_Dataset or Buffer_Dataset's drop_final_token flag).
+    bos_token : Any | None
+        Optional token used to indicate sequence/document start. Type should match data type.
     datasets : list[str] | None
         A list of subdatasets to draw from. If None, draws from all subfolders.
     weights : list[int] | None
@@ -578,6 +581,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         rank: int,
         worldsize: int,
         delimiter_token: Any,
+        bos_token: Optional[Any] = None,
         datasets: Optional[List[str]] = None,
         weights: Optional[List[int]] = None,
         seed: int = 42,
@@ -592,7 +596,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.min_length = min_length
         assert max_chunksize > 0, f"Max chunksize must be a nonzero positive integer"
         self.chunksize = max_chunksize
-        self.delimiter = delimiter_token
+        self.eos = delimiter_token
+        self.bos = bos_token
         self.verbose = verbose
         self.docset: List[
             Any
@@ -753,12 +758,18 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         """
         start_index = j * self.chunksize
         n_pull = self.chunksize
+        if self.bos is not None:
+            if j == 0:
+                n_pull -= 1
+            else:
+                start_index -= 1
         chunk = doc.slice(start_index, n_pull).to_pylist()
         self.dataset_tokens_seen[dataset] += len(chunk)
+        # Add bos/eos tokens if needed
+        if self.bos is not None and j == 0:
+            chunk = [self.bos] + chunk
         if j == n_chunks - 1:
-            chunk = chunk + [
-                self.delimiter
-            ]  # Add delimiter token to signify end of document (used upstream)
+            chunk = chunk + [self.eos]
         return chunk
 
     def _random_map_docid(self, size):
@@ -801,9 +812,10 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 doclcg = self._random_map_docid(docrange)
                 docid = doclcg + mindoc
                 doc = reader.get_batch(docid)["tokens"]
-                if len(doc) >= self.min_length:
+                doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
+                if doclen >= self.min_length:
                     n_chunks = math.ceil(
-                        (len(doc) + 1) / self.chunksize
+                        doclen / self.chunksize
                     )  # add 1 for delimiter token
                     for j in range(n_chunks):
                         if i == 0 and j < residual_chunks:
@@ -854,7 +866,7 @@ class Sampling_Dataset(_Stateful_Dataset):
     the number of tokens emitted by each. Whichever loader is furthest from its target will be
     the next to pass a document.
 
-    All args except for dataset and weights are pass-through args for the component
+    All args except for dataset, weights and delimiter are pass-through args for the component
     _Stateful_Datasets and are documented in the appropriate classes.
     ...
     Args
@@ -864,6 +876,8 @@ class Sampling_Dataset(_Stateful_Dataset):
     weights : list(float) | None
         Weights describing what percent of emitted tokens should come from each subdataset.
         Need not sum to 1. If None, tokens are drawn evenly.
+    delimiter_token : Any
+        Token used to indicate sequence/document breaks. Type should match data type.
     ...
         Pass-through args, see Streaming_Doc_Dataset or Scalable_Shard_Dataset
     """
