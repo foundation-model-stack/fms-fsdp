@@ -82,6 +82,7 @@ def get_data_loader(cfg, rank, world_size):
         data,
         cfg.seq_length + 1,
         bos_token=cfg.bos_token,
+        drop_final_token=cfg.eos_token if cfg.eos_present else None,
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
