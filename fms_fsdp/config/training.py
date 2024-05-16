@@ -16,9 +16,11 @@ class train_config:
     weights: str = "7725,500,550,28,17,22,25,8,100,500,175,250,100"
     seq_length: int = 4096
     vocab_size: int = 32000
-    bos_token: Optional[int] = None
-    eos_token: int = 0
-    eos_present: bool = False
+    bos_token: int = None
+    eos_token: int = None
+    bol_token: int = None
+    eol_token: int = None
+    strip_tokens: str = ""
     logical_shards: int = 1024
 
     # fsdp policies

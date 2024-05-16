@@ -70,6 +70,7 @@ def get_data_loader(cfg, rank, world_size):
         world_size,
         cfg.eos_token,
         bos_token=cfg.bos_token,
+        strip_tokens=[int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip())>0],
         min_length=3,
         datasets=datasets,
         weights=weights,
@@ -81,8 +82,8 @@ def get_data_loader(cfg, rank, world_size):
     data = Buffer_Dataset(
         data,
         cfg.seq_length + 1,
-        bos_token=cfg.bos_token,
-        drop_final_token=cfg.eos_token if cfg.eos_present else None,
+        bos_token=cfg.bol_token,
+        eos_token=cfg.eol_token,
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
