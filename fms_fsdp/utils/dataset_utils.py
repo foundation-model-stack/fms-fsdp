@@ -839,18 +839,20 @@ class Sampling_Dataset(_Stateful_Dataset):
     the number of tokens emitted by each. Whichever loader is furthest from its target will be
     the next to pass a document.
 
-    All args except for dataset, weights and delimiter are pass-through args for the component
-    _Stateful_Datasets and are documented in the appropriate classes.
+    All args except for dataset_type, datasets, weights and delimiter are pass-through args for
+    the component _Stateful_Datasets and are documented in the appropriate classes.
     ...
     Args
     ----
-    dataset : Scalable_Shard_Dataset | Streaming_Doc_Dataset
+    dataset_type : Scalable_Shard_Dataset | Streaming_Doc_Dataset
         Underlying iterator for each desired subdataset
+    delimiter_token : Any
+        Token used to indicate sequence/document breaks. Type should match data type.
+    datasets : list[str] | None
+        A list of subdatasets to draw from. If None, draws from all subfolders of datapath.
     weights : list(float) | None
         Weights describing what percent of emitted tokens should come from each subdataset.
         Need not sum to 1. If None, tokens are drawn evenly.
-    delimiter_token : Any
-        Token used to indicate sequence/document breaks. Type should match data type.
     ...
         Pass-through args, see Streaming_Doc_Dataset or Scalable_Shard_Dataset
     """
@@ -858,7 +860,7 @@ class Sampling_Dataset(_Stateful_Dataset):
     def __init__(
         self,
         datapath: str,
-        dataset: Union[
+        dataset_type: Union[
             Type["Streaming_Doc_Dataset"],
             Type["Scalable_Shard_Dataset"],
         ],
@@ -898,7 +900,7 @@ class Sampling_Dataset(_Stateful_Dataset):
         self.data = []
         for i, d in enumerate(self.datasets):
             self.data.append(
-                dataset(
+                dataset_type(
                     datapath=os.path.join(datapath, d),
                     rank=rank,
                     worldsize=worldsize,
