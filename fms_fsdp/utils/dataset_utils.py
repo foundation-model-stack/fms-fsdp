@@ -4,8 +4,7 @@ import math
 import os
 import random
 import time
-from collections import OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Sized, Type, Union
+from typing import Any, Callable, List, Optional, Set, Type, Union
 
 import pyarrow as pa
 import torch
@@ -453,7 +452,6 @@ class Buffer_Dataset(_Wrapper_Dataset):
         bos_token=None,
         eos_token=None,
         pad_token=None,
-        drop_final_token=None,  # one-off fix for Llama training (sep already in data)
     ):
         super().__init__(dataset)
         self.len = seq_len
@@ -468,7 +466,6 @@ class Buffer_Dataset(_Wrapper_Dataset):
             assert (
                 pad_token is not None
             ), "Error: if using pads, you must supply a pad_token"
-        self.drop = drop_final_token
 
         self.state_params = ["buffer"]
 
@@ -478,8 +475,6 @@ class Buffer_Dataset(_Wrapper_Dataset):
         while len(buffer) + len(new) < length:
             buffer += new
             new = next(iterable)
-            if new[-1] == self.drop:
-                new = new[:-1]
 
         # Add bos if needed
         if self.bos is not None and (len(buffer) == 0 or buffer[0] != self.bos):
@@ -556,9 +551,12 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         Total number of workers
     delimiter_token : Any
         Token used to indicate sequence/document breaks. Type should match data type. Required for downstream
-        sampling logic (can be removed later via PreProcess_Dataset or Buffer_Dataset's drop_final_token flag).
+        sampling logic (can be removed later via PreProcess_Dataset if needed).
     bos_token : Any | None
         Optional token used to indicate sequence/document start. Type should match data type.
+    strip_tokens : set[Any]
+        Token values that should be removed if detected at beginning or end of document
+        (i.e. any eos/bos tokens already present in the data). Type should match data type.
     seed : int
         The random seed for deterministic shuffling/sharding
     min_length : int
@@ -578,6 +576,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         worldsize: int,
         delimiter_token: Any,
         bos_token: Optional[Any] = None,
+        strip_tokens: Optional[Set[Any]] = set(),
         seed: int = 42,
         min_length: int = 1,
         max_chunksize: int = 1024,
@@ -592,6 +591,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.chunksize = max_chunksize
         self.eos = delimiter_token
         self.bos = bos_token
+        self.drop = strip_tokens
         self.verbose = verbose
         self.docset: List[
             Any
@@ -782,11 +782,13 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 doclcg = self._random_map_docid(docrange)
                 docid = doclcg + mindoc
                 doc = reader.get_batch(docid)["tokens"]
+                if doc[0].as_py() in self.drop:
+                    doc = doc.slice(1, len(doc) - 1)
+                if doc[-1].as_py() in self.drop:
+                    doc = doc.slice(0, len(doc) - 1)
                 doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
                 if doclen >= self.min_length:
-                    n_chunks = math.ceil(
-                        doclen / self.chunksize
-                    )  # add 1 for delimiter token
+                    n_chunks = math.ceil(doclen / self.chunksize)
                     for j in range(n_chunks):
                         if i == 0 and j < residual_chunks:
                             pass
@@ -811,10 +813,13 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             newpath = os.path.join(self.data, shardid)
             path, reader = self._get_reader(path, newpath, reader)
             doc = reader.get_batch(docid)["tokens"]
-            if len(doc) >= self.min_length:
-                n_chunks = math.ceil(
-                    (len(doc) + 1) / self.chunksize
-                )  # add 1 for delimiter token
+            if doc[0].as_py() in self.drop:
+                doc = doc.slice(1, len(doc) - 1)
+            if doc[-1].as_py() in self.drop:
+                doc = doc.slice(0, len(doc) - 1)
+            doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
+            if doclen >= self.min_length:
+                n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):
                     self.chunk_index = j
                     yield self._construct_chunk(j, doc, n_chunks)

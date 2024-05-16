@@ -18,6 +18,9 @@ class train_config:
     vocab_size: int = 32000
     bos_token: Optional[int] = None
     eos_token: int = 0
+    bol_token: Optional[int] = None
+    eol_token: Optional[int] = None
+    strip_tokens: str = ""
     logical_shards: int = 1024
 
     # fsdp policies
