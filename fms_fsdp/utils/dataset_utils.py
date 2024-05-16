@@ -580,7 +580,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         worldsize: int,
         delimiter_token: Any,
         bos_token: Optional[Any] = None,
-        strip_tokens: Optional[Set[Any]] = [],
+        strip_tokens: Optional[Set[Any]] = set(),
         datasets: Optional[List[str]] = None,
         weights: Optional[List[int]] = None,
         seed: int = 42,
