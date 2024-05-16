@@ -4,8 +4,7 @@ import math
 import os
 import random
 import time
-from collections import OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Sized, Type, Union
+from typing import Any, Callable, List, Optional, Set, Type, Union
 
 import pyarrow as pa
 import torch
@@ -555,7 +554,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         sampling logic (can be removed later via PreProcess_Dataset if needed).
     bos_token : Any | None
         Optional token used to indicate sequence/document start. Type should match data type.
-    strip_tokens : list[Any]
+    strip_tokens : set[Any]
         Token values that should be removed if detected at beginning or end of document
         (i.e. any eos/bos tokens already present in the data). Type should match data type.
     datasets : list[str] | None
@@ -581,7 +580,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         worldsize: int,
         delimiter_token: Any,
         bos_token: Optional[Any] = None,
-        strip_tokens: Optional[List[Any]] = [],
+        strip_tokens: Optional[Set[Any]] = [],
         datasets: Optional[List[str]] = None,
         weights: Optional[List[int]] = None,
         seed: int = 42,
@@ -814,14 +813,12 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 docid = doclcg + mindoc
                 doc = reader.get_batch(docid)["tokens"]
                 if doc[0].as_py() in self.drop:
-                    doc = doc.slice(1, len(doc)-1)
+                    doc = doc.slice(1, len(doc) - 1)
                 if doc[-1].as_py() in self.drop:
-                    doc = doc.slice(0, len(doc)-1)
+                    doc = doc.slice(0, len(doc) - 1)
                 doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
                 if doclen >= self.min_length:
-                    n_chunks = math.ceil(
-                        doclen / self.chunksize
-                    )
+                    n_chunks = math.ceil(doclen / self.chunksize)
                     for j in range(n_chunks):
                         if i == 0 and j < residual_chunks:
                             pass
@@ -849,14 +846,12 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             path, reader = self._get_reader(path, newpath, reader)
             doc = reader.get_batch(docid)["tokens"]
             if doc[0].as_py() in self.drop:
-                doc = doc.slice(1, len(doc)-1)
+                doc = doc.slice(1, len(doc) - 1)
             if doc[-1].as_py() in self.drop:
-                doc = doc.slice(0, len(doc)-1)
+                doc = doc.slice(0, len(doc) - 1)
             doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
             if doclen >= self.min_length:
-                n_chunks = math.ceil(
-                    doclen / self.chunksize
-                )
+                n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):
                     self.chunk_index = j
                     yield self._construct_chunk(j, doc, n_chunks, dataset)

@@ -36,7 +36,8 @@ def get_dummy_loader(cfg, rank, world_size):
 
 def get_data_loader(cfg, rank, world_size):
     """
-    Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training
+    Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training.
+    Assumes underlying data is sequences of integer values.
     ...
     Args
     ----
@@ -63,6 +64,10 @@ def get_data_loader(cfg, rank, world_size):
 
     # Base streaming dataset. Returns doc chunks in sequence.
     # Implements dataset sampling and rescalability.
+    droplist = [
+        int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip()) > 0
+    ]
+    droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
     data = Sampling_Dataset(
         cfg.data_path,
         Scalable_Shard_Dataset,
@@ -70,7 +75,7 @@ def get_data_loader(cfg, rank, world_size):
         world_size,
         cfg.eos_token,
         bos_token=cfg.bos_token,
-        strip_tokens=[int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip())>0],
+        strip_tokens=set(droplist),
         min_length=3,
         datasets=datasets,
         weights=weights,
