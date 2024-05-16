@@ -51,7 +51,7 @@ def get_data_loader(cfg, rank, world_size):
 
     datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
 
-    def causal_lm(data_seq, prompt_len=1):
+    def causal_lm(data_seq, prompt_len=0):
         """
         Perform causal language modeling by right-shifting the input sequence.
         Sets first prompt_len tokens to be ignored by the loss.
