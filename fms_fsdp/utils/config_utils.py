@@ -23,7 +23,7 @@ def update_config(config, **kwargs):
 
 
 def get_model_config(model_variant):
-    if model_variant == "70b":
+    if model_variant == "llama2_70b":
         llama_config = LLaMAConfig(
             emb_dim=8192,
             multiple_of=4096,
@@ -32,7 +32,7 @@ def get_model_config(model_variant):
             nlayers=80,
             hidden_grow_factor=28672 / 8192,
         )
-    elif model_variant == "34b":
+    elif model_variant == "llama2_34b":
         llama_config = LLaMAConfig(
             emb_dim=8192,
             nheads=64,
@@ -40,16 +40,16 @@ def get_model_config(model_variant):
             nlayers=48,
             hidden_grow_factor=22016 / 8192,
         )
-    elif model_variant == "13b":
+    elif model_variant == "llama2_13b":
         llama_config = LLaMAConfig(
             emb_dim=5120,
             nheads=40,
             nlayers=40,
             hidden_grow_factor=13824 / 5120,
         )
-    elif model_variant == "7b":
+    elif model_variant == "llama2_7b":
         llama_config = LLaMAConfig()
-    elif model_variant == "1.4b":
+    elif model_variant == "llama2_1.4b":
         llama_config = LLaMAConfig(
             emb_dim=2048,
             nheads=16,
