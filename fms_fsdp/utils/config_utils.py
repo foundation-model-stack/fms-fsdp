@@ -85,6 +85,16 @@ def get_model_config(model_variant):
             hidden_grow_factor=3.5,
             max_expected_seq_len=8192,
         )
+    elif model_variant == "llama3_starcoder":
+        llama_config = LLaMAConfig(
+            src_vocab_size=49152,
+            emb_dim=2048,
+            nheads=16,
+            kvheads=8,
+            nlayers=24,
+            hidden_grow_factor=3.5,
+            max_expected_seq_len=8192,
+        )
     elif model_variant == "llama3_1.8b_4k":
         llama_config = LLaMAConfig(
             src_vocab_size=128256,
