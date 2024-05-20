@@ -58,9 +58,13 @@ def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
 
             # self attn
             if is_old_fms:
-                oss_hf_layer.self_attn.q_proj.weight.copy_(fms_hf_layer.attn.query.weight)
+                oss_hf_layer.self_attn.q_proj.weight.copy_(
+                    fms_hf_layer.attn.query.weight
+                )
                 oss_hf_layer.self_attn.k_proj.weight.copy_(fms_hf_layer.attn.key.weight)
-                oss_hf_layer.self_attn.v_proj.weight.copy_(fms_hf_layer.attn.value.weight)
+                oss_hf_layer.self_attn.v_proj.weight.copy_(
+                    fms_hf_layer.attn.value.weight
+                )
             else:
                 q, k, v = torch.split(
                     fms_hf_layer.attn.in_proj.qkv_fused.weight,
@@ -108,7 +112,9 @@ def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
     return oss_hf_model
 
 
-def main(model_variant, compiled, is_old_fms, load_path, save_path, tokenizer_name_or_path):
+def main(
+    model_variant, compiled, is_old_fms, load_path, save_path, tokenizer_name_or_path
+):
     print("Initializing model...")
     llama_config = get_model_config(model_variant)
     with torch.device("meta"):
