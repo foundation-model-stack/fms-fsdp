@@ -54,6 +54,8 @@ def get_model_config(model_variant):
             emb_dim=2048,
             nheads=16,
             nlayers=24,
+            hidden_grow_factor=3,
+            kvheads=4,
         )
     elif model_variant == "llama3_8b":
         llama_config = LLaMAConfig(
