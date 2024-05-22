@@ -4,7 +4,8 @@ import os
 import fire
 import torch
 import torch.optim as optim
-from fms.models.llama import LLaMA, LLaMABlock
+from megatron.core.model.gpt_model import GPTModel
+from megatron.core.transformer.transformer_block import TransformerBlock
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
@@ -46,7 +47,7 @@ def main(**kwargs):
     setup_environ_flags()
 
     # get policy
-    block = LLaMABlock
+    block = TransformerBlock
     (
         mixed_precision_policy,
         wrapping_policy,
@@ -55,14 +56,8 @@ def main(**kwargs):
         param_init_fn,
     ) = get_policies(cfg, rank, block)
 
-    # get fms model
-    llama_config = get_model_config(cfg.model_variant)
-    if cfg.low_cpu_fsdp:
-        with torch.device("meta"):
-            model = LLaMA(llama_config)
-    else:
-        model = LLaMA(llama_config)
-        model.reset_parameters()
+    # get megatron model
+    model = GPTModel()
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -88,11 +83,6 @@ def main(**kwargs):
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
-    )
-    # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
-    model.rot_emb.compute_freqs_cis(
-        torch.device("cuda", torch.cuda.current_device()),
-        model.config.max_expected_seq_len,
     )
 
     # fsdp activation checkpointing
