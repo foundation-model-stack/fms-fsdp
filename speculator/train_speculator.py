@@ -12,7 +12,7 @@ from fms.models import get_model, register_model
 from fms.models.llama import LLaMABlock, LLaMAConfig
 from fms.utils import serialization, generation, tokenizers
 from fms.utils.generation import generate
-from fms_extras.models.speculator import MLPSpeculator  # type: ignore
+from fms_extras.models.speculator import MLPSpeculator, MLPSpeculatorLayer  # type: ignore
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
@@ -22,6 +22,7 @@ from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
+from fms_fsdp.utils.policies.ac_handler import apply_fsdp_checkpointing
 from fms_fsdp.utils.train_utils import (
     get_policies,
     get_profiler,
@@ -191,27 +192,6 @@ def main(**kwargs):
     )
     speculator.reset_parameters()
 
-    # initialize the speculator emb and head with the base models emb/head
-    # with torch.no_grad():
-    #     for i in range(speculator.n_predict):
-    #         speculator.emb[i] = model.shared.emb
-    #         speculator.head[i] = model.shared.head
-    #         speculator.emb[i].requires_grad_(False)
-    #         speculator.head[i].requires_grad_(False)
-
-    # llama_config = get_model_config(cfg.model_variant)
-
-    # if cfg.low_cpu_fsdp:
-    #     if rank == 0:
-    #         model = LLaMA(llama_config)
-    #         model.reset_parameters()
-    #     else:
-    #         with torch.device("meta"):
-    #             model = LLaMA(llama_config)
-    # else:
-    #     model = LLaMA(llama_config)
-    #     model.reset_parameters()
-
     if rank == 0:
         total_params = sum(
             p.numel() for p in speculator.parameters() if p.requires_grad
@@ -244,6 +224,7 @@ def main(**kwargs):
             else None
         ),
     )
+    apply_fsdp_checkpointing(speculator, MLPSpeculatorLayer, 1)
 
     # torch compile
     if cfg.use_torch_compile:
