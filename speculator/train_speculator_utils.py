@@ -142,15 +142,9 @@ def stage1_loss(model, speculator, input, loss_fn, ddp_stats):
             include_embeds=True,
             use_cache=False,
         )
-    preds = speculator(embeds.detach(), input[:, 1:])
-
-    losses = []
-    for i in range(preds.size(0)):
-        targ = input[:, i + 2 : preds.size(2) + i + 2]  # b n
-        loss = loss_fn(preds[i].reshape(-1, preds.size(3)), targ.long().reshape(-1))
-        losses.append(loss)
-        ddp_stats[2 + i] += loss.item()
-    loss = sum(losses)
+    losses = speculator(embeds.detach(), input[:, 1:])
+    ddp_stats[2 : 2 + losses.size(0)] += losses
+    loss = losses.sum()
     return loss, ddp_stats, input.numel()
 
 
@@ -187,15 +181,9 @@ def stage2_loss(cfg, model, speculator, input, loss_fn, ddp_stats):
         )
         targs = targs[:, -cfg.stage2_seq_length :]
         embeds = embeds[:, -cfg.stage2_seq_length : -speculator.n_predict]
-    preds = speculator(embeds.detach(), targs[:, :-1].detach())
-
-    losses = []
-    for i in range(preds.size(0)):
-        targ = targs[:, i + 1 : preds.size(2) + i + 1]  # b n
-        loss = loss_fn(preds[i].reshape(-1, preds.size(3)), targ.long().reshape(-1))
-        losses.append(loss)
-        ddp_stats[2 + i] += loss.item()
-    loss = sum(losses)
+    losses = speculator(embeds.detach(), targs.detach())
+    ddp_stats[2 : 2 + losses.size(0)] += losses
+    loss = losses.sum()
     return loss, ddp_stats, targs.numel()
 
 
