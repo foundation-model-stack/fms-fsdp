@@ -77,6 +77,7 @@ def train(
 
     start = time.time()
     loop_start = time.time()
+    train_loss = -1
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break

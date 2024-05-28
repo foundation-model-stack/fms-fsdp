@@ -156,6 +156,8 @@ def main(**kwargs):
         tokens_seen,
     )
 
+    checkpointer.save_single_file(cfg.num_steps, model)
+
     dist.barrier()
     dist.destroy_process_group()
 
