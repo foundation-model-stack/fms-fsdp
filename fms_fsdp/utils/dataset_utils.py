@@ -625,7 +625,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         # Assemble document set owned by this worker:
         # listdir, assemble shardfraglist (ind -> shard, frag)
         shards = [
-            os.path.join(root, name)[len(datapath)+1:]
+            os.path.join(root, name)[len(datapath) + 1 :]
             for root, dirs, files in os.walk(datapath, topdown=False)
             for name in files
             if "arrow" in name and os.path.isfile(os.path.join(root, name))
