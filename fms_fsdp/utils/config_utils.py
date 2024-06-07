@@ -115,6 +115,12 @@ def get_model_config(model_variant):
             hidden_grow_factor=3.5,
             max_expected_seq_len=4096,
         )
+    elif model_variant == "llama2_135m_4k":
+        llama_config = LLaMAConfig(
+            emb_dim=768,
+            nheads=12,
+            nlayers=12,
+        )
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 
