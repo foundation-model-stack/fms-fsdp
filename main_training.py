@@ -122,7 +122,7 @@ def main(**kwargs):
         model,
         optimizer,
         None,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
+        path=os.path.join(cfg.ckpt_load_path, "checkpoints/") if not os.path.isfile(cfg.ckpt_load_path) else cfg.ckpt_load_path,
         strict=False,
     )
 
