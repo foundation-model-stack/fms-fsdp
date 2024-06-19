@@ -123,6 +123,7 @@ def main(**kwargs):
         optimizer,
         None,
         path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
+        strict=False,
     )
 
     # LR schedule
