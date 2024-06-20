@@ -2,6 +2,8 @@ import os
 from dataclasses import asdict
 from functools import partial
 
+from torch.distributed.device_mesh import init_device_mesh
+
 
 try:
     import packaging.version
@@ -90,7 +92,7 @@ def train(
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
         loss.backward()
-        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        ddp_stats[1] += torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 
@@ -186,8 +188,8 @@ def setup_environ_flags():
     os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
 
-def get_policies(cfg, rank, block):
-    """Get policies for mixed precision, wrapping, sharding, ac and param init function."""
+def get_policies(cfg, rank, world_size, block):
+    """Get policies for mixed precision, sharding mesh and ac."""
 
     # mixed precision
     verify_bfloat_support = (
@@ -210,36 +212,23 @@ def get_policies(cfg, rank, block):
     else:
         mixed_precision_policy = None
 
-    # wrapping policy
-    wrapping_policy = get_wrapper(block)
-
-    # sharding strategy
-    if cfg.sharding_strategy == "fsdp":
-        sharding_strategy = ShardingStrategy.FULL_SHARD
-    elif cfg.sharding_strategy == "hsdp":
-        sharding_strategy = ShardingStrategy.HYBRID_SHARD
-    elif cfg.sharding_strategy == "ddp":
-        sharding_strategy = ShardingStrategy.NO_SHARD
-    else:
-        sharding_strategy = ShardingStrategy.FULL_SHARD
     if rank == 0:
         print(f"Sharding strategy = {cfg.sharding_strategy}")
+
+    # sharding mesh
+    if cfg.sharding_strategy == "hsdp":
+        mesh = init_device_mesh("cuda", (world_size // 8, 8), mesh_dim_names=("dp_rep", "dp_sha"))
+    else:
+        mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp",))
 
     # ac handler
     apply_selective_ac = partial(apply_fsdp_checkpointing, block=block)
 
-    # param init function
-    if cfg.low_cpu_fsdp:
-        param_init_fn = param_init_function
-    else:
-        param_init_fn = None
 
     return (
         mixed_precision_policy,
-        wrapping_policy,
-        sharding_strategy,
+        mesh,
         apply_selective_ac,
-        param_init_fn,
     )
 
 

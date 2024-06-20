@@ -6,7 +6,7 @@ import torch
 import torch.optim as optim
 from fms.models.llama import LLaMA, LLaMABlock
 from torch import distributed as dist
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed._composable.fsdp import fully_shard
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -48,12 +48,10 @@ def main(**kwargs):
     # get policy
     block = LLaMABlock
     (
-        mixed_precision_policy,
-        wrapping_policy,
-        sharding_strategy_policy,
+        mp_policy,
+        mesh,
         apply_selective_ac,
-        param_init_fn,
-    ) = get_policies(cfg, rank, block)
+    ) = get_policies(cfg, rank, world_size, block)
 
     # get fms model
     llama_config = get_model_config(cfg.model_variant)
@@ -79,16 +77,17 @@ def main(**kwargs):
         print("Datasets constructed!")
 
     # FSDP
-    model = FSDP(
-        model,
-        auto_wrap_policy=wrapping_policy,
-        mixed_precision=mixed_precision_policy,
-        sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
-        device_id=torch.cuda.current_device(),
-        limit_all_gathers=True,
-        param_init_fn=param_init_fn,
-    )
+    for module in model.modules():
+        if isinstance(module, block):
+            fully_shard(module, mesh=mesh, mp_policy=mp_policy)
+    fully_shard(model, mesh=mesh, mp_policy=mp_policy)
+    if rank == 0:
+        print(model)
+
+    if cfg.low_cpu_fsdp:
+        model.to_empty(device="cuda")
+        model.reset_parameters()
+
     # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
     model.rot_emb.compute_freqs_cis(
         torch.device("cuda", torch.cuda.current_device()),
@@ -105,8 +104,6 @@ def main(**kwargs):
     if cfg.use_torch_compile:
         if rank == 0:
             print(f"--> enabling torch compile...")
-        # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
-        torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
 
     # Optimizer
