@@ -116,7 +116,7 @@ def main(**kwargs):
 
     # optionally load from checkpoint (when continue pretraining)
     checkpointer = Checkpointer(
-        cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
+        cfg.ckpt_save_path, cfg.max_ckpt, cfg.sharding_strategy, rank, local_rank
     )
     model, optimizer, _, start_step, tokens_seen = checkpointer.load(
         model,

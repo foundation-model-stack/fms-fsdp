@@ -46,7 +46,7 @@ def get_oldest(targdir, qualifier=lambda x: True):
                 for x in os.listdir(targdir)
                 if qualifier(os.path.join(targdir, x))
             ],
-            key=os.path.getctime,
+            key=lambda path: int(path.split("/")[-1].split("_")[1]),
         )
         return os.path.join(targdir, oldest)
     return None
@@ -105,20 +105,17 @@ class Checkpointer:
 
     def _cleanup(self):
         # Clean old checkpoints. Barrier to keep synchronization correct.
-        file_to_remove = None
+        ckp_to_remove = None
         if (
             self.rank == 0
-            and len([x for x in os.listdir(self.ckp_path) if "tmp" in x])
+            and len([x for x in os.listdir(self.ckp_path) if os.path.isdir(x)])
             > self.max_ckps
         ):
             ckp_to_remove = Path(
-                get_oldest(self.ckp_path, qualifier=lambda x: "tmp" in x)
+                get_oldest(self.ckp_path, qualifier=lambda x: os.path.isdir(x))
             )
-            if os.path.is_file(ckp_to_remove):
-                ckp_to_remove.unlink()
-            else:
-                shutil.rmtree(ckp_to_remove)
-        return file_to_remove
+            shutil.rmtree(ckp_to_remove)
+        return ckp_to_remove
 
     def _do_save(self, rank, local_rank):  # , shard_group, replicate_group):
         if self.p_mode == "hsdp":
