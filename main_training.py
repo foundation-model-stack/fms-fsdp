@@ -125,6 +125,8 @@ def main(**kwargs):
         path=os.path.join(cfg.ckpt_load_path, "checkpoints/") if not os.path.isfile(cfg.ckpt_load_path) else cfg.ckpt_load_path,
         strict=False,
     )
+    if cfg.reset_stepcount:
+        start_step = 0
 
     # LR schedule
     warmup_interval = min(2000, cfg.num_steps // 20)
