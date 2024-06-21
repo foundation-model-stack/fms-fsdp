@@ -127,6 +127,9 @@ def main(**kwargs):
     )
     if cfg.reset_stepcount:
         start_step = 0
+        # Override loaded optim hyperparams with the current values
+        for g in optimizer.param_groups:
+            g["initial_lr"] = cfg.learning_rate
 
     # LR schedule
     warmup_interval = min(2000, cfg.num_steps // 20)
