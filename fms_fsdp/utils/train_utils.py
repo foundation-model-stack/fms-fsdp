@@ -89,7 +89,6 @@ def train(
         output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
-        print("GOTHERE")
 
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
