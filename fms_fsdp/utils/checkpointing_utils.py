@@ -208,9 +208,8 @@ class Checkpointer:
                         state_dict=model_ckp,
                         storage_reader=FileSystemReader(load_path),
                         planner=DefaultLoadPlanner(),
-                        strict=strict,
                     )
-                    model.load_state_dict(model_ckp["model_state"])
+                    model.load_state_dict(model_ckp["model_state"], strict=strict)
                 model.to(self.local_rank)
                 self.report(model_load_time=time.time() - model_load_time)
                 step = 0
