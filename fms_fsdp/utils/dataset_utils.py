@@ -29,7 +29,7 @@ The following distributed dataloaders are designed around 3 main principles:
     rescaling (i.e. counters, RNG states), and `reshard_params`, which are lists that can be 
     re-distributed over workers (i.e. buffers).
 
-Our loaders obey the following type heirarchy: 
+Our loaders obey the following type hierarchy: 
 torch.data.IterableDataset -> _Stateful_Dataset -> _Wrapper_Dataset. 
 `_Stateful_Dataset` implements state and checkpointing logic. A `_Wrapper_Dataset` holds a 
 single `_Stateful_Dataset` and iterates via calling its wrapped dataset any number of times, 
