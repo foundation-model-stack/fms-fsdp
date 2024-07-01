@@ -110,7 +110,7 @@ def get_model_config(model_variant):
             hidden_grow_factor=3.75,
             max_expected_seq_len=4096,
         )
-        elif model_variant == "llama3_1.8b_tele4":
+    elif model_variant == "llama3_1.8b_tele4":
         llama_config = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=2048,
