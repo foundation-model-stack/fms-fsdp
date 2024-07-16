@@ -142,6 +142,7 @@ def get_model_config(model_variant):
         )
     elif model_variant == "llama3_194m_4k":
         llama_config = LLaMAConfig(
+            src_vocab_size=128256,
             emb_dim=1024,
             nheads=8,
             nlayers=10,
