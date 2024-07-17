@@ -152,3 +152,10 @@ def get_model_config(model_variant):
         raise ValueError(f"model variant {model_variant} not supported.")
 
     return llama_config
+
+
+def set_mup_from_cfg(job_cfg, model_cfg):
+    fields = {k:v for k,v in vars(job_cfg).items() if "mup" in k and v >= 0}
+    for f in fields:
+        setattr(model_cfg, f, fields[f])
+    return model_cfg

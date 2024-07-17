@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
-from fms_fsdp.utils.config_utils import get_model_config, update_config
+from fms_fsdp.utils.config_utils import get_model_config, set_mup_from_cfg, update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
@@ -57,6 +57,7 @@ def main(**kwargs):
 
     # get fms model
     llama_config = get_model_config(cfg.model_variant)
+    llama_config = set_mup_from_cfg(cfg, llama_config)
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):
             model = LLaMA(llama_config)
