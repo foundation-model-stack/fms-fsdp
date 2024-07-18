@@ -45,16 +45,6 @@ def main(**kwargs):
     torch.cuda.empty_cache()
     setup_environ_flags()
 
-    # get policy
-    block = LLaMABlock
-    (
-        mixed_precision_policy,
-        wrapping_policy,
-        sharding_strategy_policy,
-        apply_selective_ac,
-        param_init_fn,
-    ) = get_policies(cfg, rank, block)
-
     # get fms model
     llama_config = get_model_config(cfg.model_variant)
     llama_config = set_mup_from_cfg(cfg, llama_config)
@@ -78,6 +68,16 @@ def main(**kwargs):
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:
         print("Datasets constructed!")
+
+    # get policy
+    block = LLaMABlock
+    (
+        mixed_precision_policy,
+        wrapping_policy,
+        sharding_strategy_policy,
+        apply_selective_ac,
+        param_init_fn,
+    ) = get_policies(cfg, rank, block, llama_config)
 
     # FSDP
     model = FSDP(

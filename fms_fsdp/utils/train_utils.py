@@ -187,7 +187,7 @@ def setup_environ_flags():
     os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
 
-def get_policies(cfg, rank, block):
+def get_policies(cfg, rank, block, model_cfg):
     """Get policies for mixed precision, wrapping, sharding, ac and param init function."""
 
     # mixed precision
@@ -231,7 +231,7 @@ def get_policies(cfg, rank, block):
 
     # param init function
     if cfg.low_cpu_fsdp:
-        param_init_fn = param_init_function
+        param_init_fn = partial(param_init_function, cfg=model_cfg)
     else:
         param_init_fn = None
 
