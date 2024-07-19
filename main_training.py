@@ -133,7 +133,7 @@ def main(**kwargs):
                 params_1d.append(m.head.weight)
         elif isinstance(m, MultiHeadAttention):
             print(m.in_proj)
-            params_2d += [m.dense.weight,] + list(m.in_proj.parameters())
+            params_2d += [m.dense.weight,] + [m_.weight for m_ in m.in_proj.modules()]
         elif isinstance(m, GatedLinearUnit):
             params_2d += [m.wg1_fused.weight, m.w2.weight]
     print("0d", type(params_0d), len(params_0d))
