@@ -126,11 +126,15 @@ def main(**kwargs):
     params_2d = []
     for m in model.modules():
         if isinstance(m, WordEmbedding):
-            print("GOTHERE: 1D", [name for name,_ in m.named_parameters()])
-            params_1d += [p for name, p in m.named_parameters() if "bias" not in name]
-        elif isinstance(m, MultiHeadAttention) or isinstance(m, GatedLinearUnit):
-            print("GOTHERE: 2D", [name for name,_ in m.named_parameters()])
-            params_2d += [p for name, p in m.named_parameters() if "bias" not in name]
+            params_1d.append(m.emb.weight)
+            if m.abs_pos:
+                params_1d.append(m.pos_emb.weight)
+            if m.reversible and not m.tie_weights:
+                params_1d.append(m.head.weight)
+        elif isinstance(m, MultiHeadAttention):
+            params_2d += [m.dense.weight,] + list(m.in_proj.parameters())
+        elif isinstance(m, GatedLinearUnit):
+            params_2d += [m.wg1_fused.weight, m.w2.weight]
     print("0d", type(params_0d), len(params_0d))
     print("1d", type(params_1d), len(params_1d))
     print("2d", type(params_2d), len(params_2d))
