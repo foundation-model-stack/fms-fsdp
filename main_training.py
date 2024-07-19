@@ -5,15 +5,21 @@ import fire
 import torch
 import torch.optim as optim
 from fms.models.llama import LLaMA, LLaMABlock
-from fms.modules.layernorm import LayerNormParameterized
+from fms.modules.attention import MultiHeadAttention
 from fms.modules.embedding import WordEmbedding
+from fms.modules.feedforward import GatedLinearUnit
+from fms.modules.layernorm import LayerNormParameterized
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
-from fms_fsdp.utils.config_utils import get_model_config, set_mup_from_cfg, update_config
+from fms_fsdp.utils.config_utils import (
+    get_model_config,
+    set_mup_from_cfg,
+    update_config,
+)
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
@@ -113,12 +119,22 @@ def main(**kwargs):
         model = torch.compile(model)
 
     # Optimizer
-    params_0d = (
-        [p for name,p in model.named_parameters() if "bias" in name] +
-        [m.weight for m in model.modules if isinstance(m, LayerNormParameterized)]
-    )
-    params_1d = [p for m in model.modules() for name,p in m.named_parameters() if isinstance(m, WordEmbedding) and "bias" not in name]
-    params_2d = [p for m in model.modules() for name,p in m.named_parameters() if (isinstance(m, MultiHeadAttention) or isinstance(m, GatedLinearUnit)) and "bias" not in name]
+    params_0d = [p for name, p in model.named_parameters() if "bias" in name] + [
+        m.weight for m in model.modules() if isinstance(m, LayerNormParameterized)
+    ]
+    params_1d = [
+        p
+        for m in model.modules()
+        for name, p in m.named_parameters()
+        if isinstance(m, WordEmbedding) and "bias" not in name
+    ]
+    params_2d = [
+        p
+        for m in model.modules()
+        for name, p in m.named_parameters()
+        if (isinstance(m, MultiHeadAttention) or isinstance(m, GatedLinearUnit))
+        and "bias" not in name
+    ]
     params_all = set(sum([params_0d, params_1d, params_2d]))
     for p in model.parameters():
         assert p in params_all, p.shape
@@ -126,7 +142,9 @@ def main(**kwargs):
         {"params": params_0d, "lr": cfg.learning_rate * llama_config.mup_0d_lr},
         {"params": params_1d, "lr": cfg.learning_rate * llama_config.mup_1d_lr},
         {"params": params_2d, "lr": cfg.learning_rate * llama_config.mup_2d_lr},
-        lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+        lr=cfg.learning_rate,
+        betas=(0.9, 0.95),
+        weight_decay=0.1,
     )
 
     # optionally load from checkpoint (when continue pretraining)
@@ -137,7 +155,9 @@ def main(**kwargs):
         model,
         optimizer,
         None,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/") if not os.path.isfile(cfg.ckpt_load_path) else cfg.ckpt_load_path,
+        path=os.path.join(cfg.ckpt_load_path, "checkpoints/")
+        if not os.path.isfile(cfg.ckpt_load_path)
+        else cfg.ckpt_load_path,
         strict=False,
     )
     if cfg.reset_stepcount:

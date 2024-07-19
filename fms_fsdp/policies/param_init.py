@@ -1,5 +1,5 @@
 import torch
-from fms.modules.attention import MultiHeadAttention, QKV
+from fms.modules.attention import QKV, MultiHeadAttention
 from fms.modules.embedding import WordEmbedding
 from fms.modules.feedforward import GatedLinearUnit
 from fms.modules.layernorm import LayerNormParameterized
