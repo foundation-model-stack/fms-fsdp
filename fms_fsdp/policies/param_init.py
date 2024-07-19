@@ -11,7 +11,7 @@ def param_init_function(module, cfg):
         MultiHeadAttention: cfg.mup_attn_init,
         QKV: cfg.mup_attn_init,
         GatedLinearUnit: cfg.mup_ffn_init,
-        WordEmbedding: 1,
+        WordEmbedding: (cfg.mup_1d_init, cfg.mup_emb_scale, cfg.mup_head_scale),
         LayerNormParameterized: 1,
     }
     scale_keys = list(scales.keys())
