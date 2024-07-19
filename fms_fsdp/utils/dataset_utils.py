@@ -324,24 +324,32 @@ class Checkpoint_Dataset(_Wrapper_Dataset):
         # If path does not exist, or exists but is empty, exit early
         if not os.path.exists(path) or len(os.listdir(path)) == 0:
             self.report(
-                f"No valid checkpoint detected at {path}, dataset starting from scratch."
+                f"  Dataset: No valid checkpoint detected at {path}, dataset starting from scratch."
             )
             return
         # Grab latest item in path
         latest = os.path.join(path, get_latest(path))
-        self.report(f"Dataset checkpoint detected at {latest}")
+        self.report(f"Checkpoint detected at {latest}")
         # If item is not a folder, exit early
         if os.path.isfile(latest):
             self.report(
-                f"Checkpoint exists but contains no dataset! Dataset starting from scratch."
+                f"  Dataset: Detected checkpoint {latest} is a single file with no dataset info."
+                + " Dataset starting from scratch."
             )
             return
-        # If item is a folder, get the step count
+        # If item is a folder, check that it contains shard files
+        if len([x for x in os.listdir(latest) if "loader" in x]) == 0:
+            self.report(
+                f"  Dataset: Detected checkpoint {latest} exists but contains no dataset checkpoints."
+                + " Dataset starting from scratch."
+            )
+            return
+        # All checks passed, get the step count
         self.step = int(latest.split("_")[-2])
         # Proceed
         start = time.time()
         self.dataset.load_from_path(latest)
-        self.report(f"Dataset checkpoint loaded! Load time: {time.time() - start}")
+        self.report(f"  Dataset: Checkpoint loaded! Load time: {time.time() - start}")
 
 
 class Preload_Buffer_Dataset(_Wrapper_Dataset):
