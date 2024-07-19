@@ -133,14 +133,12 @@ def main(**kwargs):
             if m.reversible and not m.tie_weights:
                 params_1d.append(m.head.weight)
         elif isinstance(m, MultiHeadAttention):
-            print(m.in_proj)
             params_2d += [m.dense.weight,] + [m_.weight for m_ in m.in_proj.modules() if isinstance(m_, nn.Linear)]
         elif isinstance(m, GatedLinearUnit):
             params_2d += [m.wg1_fused.weight, m.w2.weight]
-    print("0d", type(params_0d), len(params_0d))
-    print("1d", type(params_1d), len(params_1d))
-    print("2d", type(params_2d), len(params_2d))
     params_all = set(sum([params_0d, params_1d, params_2d], []))
+    print("Mup:", sum([p.numel() for p in params_all]))
+    print("Base:", sum([p.numel() for p in model.parameters()]))
     for p in model.parameters():
         assert p in params_all, p.shape
     optimizer = optim.AdamW(
