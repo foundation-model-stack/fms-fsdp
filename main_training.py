@@ -138,7 +138,7 @@ def main(**kwargs):
     print("0d", type(params_0d), len(params_0d))
     print("1d", type(params_1d), len(params_1d))
     print("2d", type(params_2d), len(params_2d))
-    params_all = set(sum([params_0d, params_1d, params_2d]))
+    params_all = set(sum([params_0d, params_1d, params_2d], []))
     for p in model.parameters():
         assert p in params_all, p.shape
     optimizer = optim.AdamW(
