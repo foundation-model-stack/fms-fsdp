@@ -122,19 +122,13 @@ def main(**kwargs):
     params_0d = [p for name, p in model.named_parameters() if "bias" in name] + [
         m.weight for m in model.modules() if isinstance(m, LayerNormParameterized)
     ]
-    params_1d = [
-        p
-        for m in model.modules()
-        for name, p in m.named_parameters()
-        if isinstance(m, WordEmbedding) and "bias" not in name
-    ]
-    params_2d = [
-        p
-        for m in model.modules()
-        for name, p in m.named_parameters()
-        if (isinstance(m, MultiHeadAttention) or isinstance(m, GatedLinearUnit))
-        and "bias" not in name
-    ]
+    params_1d = []
+    params_2d = []
+    for m in model.modules():
+        if isinstance(m, WordEmbedding):
+            params_1d += [p for name, p in m.named_parameters() if "bias" not in name]
+        elif isinstance(m, MultiHeadAttention) or isinstance(m, GatedLinearUnit):
+            params_2d += [p for name, p in m.named_parameters() if "bias" not in name]
     print("0d", type(params_0d), len(params_0d))
     print("1d", type(params_1d), len(params_1d))
     print("2d", type(params_2d), len(params_2d))
