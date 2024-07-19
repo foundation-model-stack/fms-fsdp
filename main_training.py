@@ -132,6 +132,7 @@ def main(**kwargs):
             if m.reversible and not m.tie_weights:
                 params_1d.append(m.head.weight)
         elif isinstance(m, MultiHeadAttention):
+            print(len(list(m.in_proj.parameters())))
             params_2d += [m.dense.weight,] + list(m.in_proj.parameters())
         elif isinstance(m, GatedLinearUnit):
             params_2d += [m.wg1_fused.weight, m.w2.weight]
