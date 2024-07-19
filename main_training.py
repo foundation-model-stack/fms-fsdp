@@ -125,6 +125,7 @@ def main(**kwargs):
     ]
     params_1d = []
     params_2d = []
+    print(model)
     for m in model.modules():
         if isinstance(m, WordEmbedding):
             params_1d.append(m.emb.weight)
