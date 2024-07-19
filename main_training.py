@@ -137,9 +137,11 @@ def main(**kwargs):
         elif isinstance(m, GatedLinearUnit):
             params_2d += [m.wg1_fused.weight, m.w2.weight]
     optimizer = optim.AdamW(
-        {"params": params_0d, "lr": cfg.learning_rate * llama_config.mup_0d_lr},
-        {"params": params_1d, "lr": cfg.learning_rate * llama_config.mup_1d_lr},
-        {"params": params_2d, "lr": cfg.learning_rate * llama_config.mup_2d_lr},
+        [
+            {"params": params_0d, "lr": cfg.learning_rate * llama_config.mup_0d_lr},
+            {"params": params_1d, "lr": cfg.learning_rate * llama_config.mup_1d_lr},
+            {"params": params_2d, "lr": cfg.learning_rate * llama_config.mup_2d_lr},
+        ],
         betas=(0.9, 0.95),
         weight_decay=0.1,
     )
