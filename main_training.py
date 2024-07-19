@@ -5,6 +5,8 @@ import fire
 import torch
 import torch.optim as optim
 from fms.models.llama import LLaMA, LLaMABlock
+from fms.modules.layernorm import LayerNormParameterized
+from fms.modules.embedding import WordEmbedding
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
@@ -111,8 +113,20 @@ def main(**kwargs):
         model = torch.compile(model)
 
     # Optimizer
+    params_0d = (
+        [p for name,p in model.named_parameters() if "bias" in name] +
+        [m.weight for m in model.modules if isinstance(m, LayerNormParameterized)]
+    )
+    params_1d = [p for m in model.modules() for name,p in m.named_parameters() if isinstance(m, WordEmbedding) and "bias" not in name]
+    params_2d = [p for m in model.modules() for name,p in m.named_parameters() if (isinstance(m, MultiHeadAttention) or isinstance(m, GatedLinearUnit)) and "bias" not in name]
+    params_all = set(sum([params_0d, params_1d, params_2d]))
+    for p in model.parameters():
+        assert p in params_all, p.shape
     optimizer = optim.AdamW(
-        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+        {"params": params_0d, "lr": cfg.learning_rate * llama_config.mup_0d_lr},
+        {"params": params_1d, "lr": cfg.learning_rate * llama_config.mup_1d_lr},
+        {"params": params_2d, "lr": cfg.learning_rate * llama_config.mup_2d_lr},
+        lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
     )
 
     # optionally load from checkpoint (when continue pretraining)
