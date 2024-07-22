@@ -36,6 +36,7 @@ class train_config:
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
     seed: int = 2023
+    reset_stepcount: bool = False
 
     # profiling
     use_profiler: bool = False
@@ -51,3 +52,13 @@ class train_config:
 
     # compile
     use_torch_compile: bool = True
+
+    # muP scale params
+    mup_emb_scale: float = 0
+    mup_head_scale: float = 0
+    mup_ffn_init: float = 0
+    mup_attn_init: float = 0
+    mup_attn_temp: float = 0
+    mup_0d_lr: float = 0
+    mup_1d_lr: float = 0
+    mup_2d_lr: float = 0
