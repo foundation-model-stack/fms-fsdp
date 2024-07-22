@@ -122,8 +122,14 @@ def main(**kwargs):
         model,
         optimizer,
         None,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
+        path=os.path.join(cfg.ckpt_load_path, "checkpoints/") if not os.path.isfile(cfg.ckpt_load_path) else cfg.ckpt_load_path,
+        strict=False,
     )
+    if cfg.reset_stepcount:
+        start_step = 0
+        # Override loaded optim hyperparams with the current values
+        for g in optimizer.param_groups:
+            g["initial_lr"] = cfg.learning_rate
 
     # LR schedule
     warmup_interval = min(2000, cfg.num_steps // 20)
@@ -155,6 +161,8 @@ def main(**kwargs):
         start_step,
         tokens_seen,
     )
+
+    checkpointer.save_single_file(cfg.num_steps, model)
 
     dist.barrier()
     dist.destroy_process_group()
