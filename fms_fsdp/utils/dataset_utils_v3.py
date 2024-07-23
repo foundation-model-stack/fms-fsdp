@@ -1032,47 +1032,63 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
         ), f"n_logical_shards {n_logical_shards} must be a positive integer"
 
         super().__init__(rank, worldsize)
-        self.data = []
-        self.n_logicals = n_logical_shards // worldsize
+        self.datapath = datapath
         self.total_shards = n_logical_shards
         self.delimiter = delimiter_token
+        self.kwargs = kwargs
+        self.verbose = verbose
 
-        logicals = list(range(n_logical_shards))
-        self.logicals_owned = _shard_partition(logicals, self.rank, self.worldsize)
-        assert len(self.logicals_owned) == self.n_logicals
-
-        # Build logical shards
-        for i in range(self.n_logicals):
-            self.data.append(
-                Streaming_Doc_Dataset(
-                    datapath=datapath,
-                    worldsize=n_logical_shards,
-                    rank=self.logicals_owned[i],
-                    delimiter_token=delimiter_token,
-                    verbose=(rank == 0),
-                    **kwargs,
-                )
-            )
-            if verbose:
-                logging.info(
-                    f"Worker {rank} assembled logical shard {self.logicals_owned[i]}, {i+1} of {self.n_logicals}"
-                )
-
-        # Logical shard sampling stats - populate after subdataset setup
+        # Fields to be populated during setup / subdataset setup
+        self.data = []
+        self.logicals_owned = []
+        self.n_logicals = 0
         self.n_docs_remaining = []
 
         # Position "state", used only for maintaining order when n_workers is unchanged
         # For scaling up or down, logical position is meaningless, and reset
         self.current_reader = None
         self.logical_shard_states = None
-        self.generator = torch.Generator().manual_seed(self.rank)
+        self.generator = torch.Generator()
+        
         self.g_state = None
         self.state_params = ["current_reader", "g_state"]
         self.reshard_params = ["n_docs_remaining", "logical_shard_states"]
 
+        self.is_setup = False
+
+    def setup(self):
+        if not self.is_setup:
+            self.is_setup = True
+            n_logical_shards = self.total_shards
+            logicals = list(range(n_logical_shards))
+            self.logicals_owned = _shard_partition(logicals, self.rank, self.worldsize)
+            self.n_logicals = n_logical_shards // self.worldsize
+            assert len(self.logicals_owned) == self.n_logicals
+
+            # Build logical shards
+            for i in range(self.n_logicals):
+                self.data.append(
+                    Streaming_Doc_Dataset(
+                        datapath=self.datapath,
+                        worldsize=n_logical_shards,
+                        rank=self.logicals_owned[i],
+                        delimiter_token=self.delimiter,
+                        verbose=(self.rank == 0),
+                        **self.kwargs,
+                    )
+                )
+                if self.verbose:
+                    logging.info(
+                        f"Worker {self.rank} assembled logical shard {self.logicals_owned[i]}, {i+1} of {self.n_logicals}"
+                    )
+
+            self.generator.manual_seed(self.rank)
+
+            [d.setup() for d in self.data]
+            self.n_docs_remaining = [d._len for d in self.data]
+
     def __iter__(self):
-        [d.setup() for d in self.data]
-        self.n_docs_remaining = [d._len for d in self.data]
+        self.setup()
         # Grab one doc at a time in random order
         data = [iter(d) for d in self.data]
         while True:
@@ -1108,6 +1124,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
         return super().state_dict()
 
     def load_state_dict(self, state_dicts, sharded_input=False):
+        self.setup()
         sharded_dicts = super().load_state_dict(state_dicts, sharded_input)
         # Manually set generator state if it exists
         if self.g_state is not None:
