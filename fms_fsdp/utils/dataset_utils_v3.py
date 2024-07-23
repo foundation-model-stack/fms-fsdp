@@ -89,6 +89,12 @@ class _Stateful_Dataset(data.IterableDataset):
         self.load_worldsize = (
             worldsize  # Enable calling load_state_dict() directly, assume no rescaling
         )
+        self.is_setup = False
+
+    def setup(self):
+        if not self.is_setup:
+            self.is_setup = True
+            pass
 
     def statename(self, x: str):
         # Note that this naming convention implicitly disallows repeated layers in the dataset pipeline
@@ -96,8 +102,10 @@ class _Stateful_Dataset(data.IterableDataset):
 
     def state_dict(self):
         """
-        Retrieve all state and reshard flags (each worker/process saves its own state dict shard)
+        Retrieve all state and reshard flags (each worker/process saves its own state dict shard).
+        On the off chance that you're saving a checkpoint with zero steps, run setup first.
         """
+        self.setup()
         return {
             self.statename(flag): getattr(self, flag)
             for flag in self.state_params + self.reshard_params
@@ -136,14 +144,16 @@ class _Stateful_Dataset(data.IterableDataset):
         global list of states across all checkpoint shard files. If sharded_input=True, this expects
         _shard_inclusive(global_state_list). Handling reduced inputs allows for much more efficient loading.
         Workflow:
-        1. if sharded_inputs is false, shard the inputs.
-        2. If worldsize matches checkpoint, pull state and reshard params from the given checkpoint
+        1. Run setup to prepare dataset
+        2. if sharded_inputs is false, shard the inputs.
+        3. If worldsize matches checkpoint, pull state and reshard params from the given checkpoint
             shard (state_dicts is a singleton list).
-        3. If worldsize does not match checkpoint, toss state params and assemble reshard params from
+        4. If worldsize does not match checkpoint, toss state params and assemble reshard params from
             across given state_dicts. In this case state_dicts may be singleton (for fractional ownership)
             or multi-element (for multiple/partitioned ownership).
-        4. Return reduced input for use by downstream loading functions
+        5. Return reduced input for use by downstream loading functions
         """
+        self.setup()
         if not sharded_input:
             self.load_worldsize = len(state_dicts)
             state_dicts = _shard_inclusive(state_dicts, self.rank, self.worldsize)
@@ -205,6 +215,7 @@ class _Wrapper_Dataset(_Stateful_Dataset):
         """
         Sets all specified flags at the current level, then recurses into wrapped dataset.
         """
+        self.setup()
         sharded_dicts = super().load_state_dict(state_dicts, sharded_input)
         self.dataset.load_worldsize = self.load_worldsize
         self.dataset.load_state_dict(sharded_dicts, True)
@@ -215,6 +226,7 @@ class _Wrapper_Dataset(_Stateful_Dataset):
         Fetches state dict recursively from wrapped layers, then adds specified flags.
         Overlapping flags are overwritten with a warning.
         """
+        self.setup()
         out = self.dataset.state_dict()
         state = super().state_dict()
         for flag in self.state_params + self.reshard_params:
@@ -1117,6 +1129,7 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
             yield out
 
     def state_dict(self):
+        self.setup()
         # Write generator state manually
         self.g_state = self.generator.get_state()
         # Recursive fetch
