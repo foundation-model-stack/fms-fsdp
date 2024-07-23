@@ -582,7 +582,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         max_chunksize: int = 1024,
         verbose: bool = False,
     ):
-        super(Streaming_Doc_Dataset, self).__init__(rank, worldsize)
+        super().__init__(rank, worldsize)
         self.seed = seed
         self.data = datapath
         self.min_length = min_length
@@ -628,84 +628,85 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         All rank-dependent setup, which must occur after init
         (rank assignment, subdataset splitting, etc.)
         """
-        datapath = self.data
-        self.is_setup = True
+        if not self.is_setup:
+            datapath = self.data
+            self.is_setup = True
 
-        # Gather per-file document counts from metadata count file(s)
-        countfiles = [
-            x
-            for x in os.listdir(os.path.join(os.path.dirname(datapath), "meta"))
-            if "counts" in x and "csv" in x
-        ]
-        assert len(countfiles) == 1
-        doc_counts = {}
-        pathsplit = (datapath, "")
-        while len(pathsplit[1]) == 0:
-            pathsplit = os.path.split(pathsplit[0])
-        pardir, dataset = pathsplit
-        self.dataset = dataset
-        with open(os.path.join(pardir, "meta", countfiles[0]), "r") as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                fullpath = row["dataset/filename"]
-                prefix = fullpath.find("/" + dataset) + 1
-                if prefix > 0:
-                    key = fullpath[prefix:]
-                    doc_counts[key] = int(row["documents"])
+            # Gather per-file document counts from metadata count file(s)
+            countfiles = [
+                x
+                for x in os.listdir(os.path.join(os.path.dirname(datapath), "meta"))
+                if "counts" in x and "csv" in x
+            ]
+            assert len(countfiles) == 1
+            doc_counts = {}
+            pathsplit = (datapath, "")
+            while len(pathsplit[1]) == 0:
+                pathsplit = os.path.split(pathsplit[0])
+            pardir, dataset = pathsplit
+            self.dataset = dataset
+            with open(os.path.join(pardir, "meta", countfiles[0]), "r") as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    fullpath = row["dataset/filename"]
+                    prefix = fullpath.find("/" + dataset) + 1
+                    if prefix > 0:
+                        key = fullpath[prefix:]
+                        doc_counts[key] = int(row["documents"])
 
-        # Assemble document set owned by this worker:
-        # listdir, assemble shardfraglist (ind -> shard, frag)
-        shards = [
-            shard
-            for shard in os.listdir(datapath)
-            if os.path.isfile(os.path.join(datapath, shard))
-            and "arrow" in os.path.join(datapath, shard)
-        ]
-        shards.sort()  # Ensure consistent sharding across machines
-        start_frag = (self.rank * self.worldsize * len(shards)) // self.worldsize
-        end_frag = ((self.rank + 1) * self.worldsize * len(shards)) // self.worldsize
-        shardfrags = [
-            (shards[i // self.worldsize], i % self.worldsize)
-            for i in range(start_frag, end_frag)
-        ]
+            # Assemble document set owned by this worker:
+            # listdir, assemble shardfraglist (ind -> shard, frag)
+            shards = [
+                shard
+                for shard in os.listdir(datapath)
+                if os.path.isfile(os.path.join(datapath, shard))
+                and "arrow" in os.path.join(datapath, shard)
+            ]
+            shards.sort()  # Ensure consistent sharding across machines
+            start_frag = (self.rank * self.worldsize * len(shards)) // self.worldsize
+            end_frag = ((self.rank + 1) * self.worldsize * len(shards)) // self.worldsize
+            shardfrags = [
+                (shards[i // self.worldsize], i % self.worldsize)
+                for i in range(start_frag, end_frag)
+            ]
 
-        # Read shardfrags, assemble doc list for each file shard (aggregating over fragments):
-        ndocs = -1
-        docset = {}  # shardid -> (min docid, max docid)
-        for i, (shard, frag) in enumerate(shardfrags):
-            ndocs = doc_counts[os.path.join(dataset, shard)]
-            doc_start = (ndocs * frag) // self.worldsize
-            doc_end = (
-                ndocs * frag + ndocs
-            ) // self.worldsize - 1  # Inclusive upper bound
-            if shard not in docset:
-                docset[shard] = [doc_start, doc_end]
-            min_d, max_d = docset[shard]
-            if doc_start < min_d:
-                docset[shard][0] = doc_start
-            if doc_end > max_d:
-                docset[shard][1] = doc_end
+            # Read shardfrags, assemble doc list for each file shard (aggregating over fragments):
+            ndocs = -1
+            docset = {}  # shardid -> (min docid, max docid)
+            for i, (shard, frag) in enumerate(shardfrags):
+                ndocs = doc_counts[os.path.join(dataset, shard)]
+                doc_start = (ndocs * frag) // self.worldsize
+                doc_end = (
+                    ndocs * frag + ndocs
+                ) // self.worldsize - 1  # Inclusive upper bound
+                if shard not in docset:
+                    docset[shard] = [doc_start, doc_end]
+                min_d, max_d = docset[shard]
+                if doc_start < min_d:
+                    docset[shard][0] = doc_start
+                if doc_end > max_d:
+                    docset[shard][1] = doc_end
 
-        # Add all of this dataset's shard entries to self.docset
-        doccount = 0
-        for shardid in docset:
-            min_d = docset[shardid][0]
-            max_d = docset[shardid][1]
-            self.docset.append((shardid, min_d, max_d))
-            doccount += max_d - min_d + 1
-        self._len = doccount
+            # Add all of this dataset's shard entries to self.docset
+            doccount = 0
+            for shardid in docset:
+                min_d = docset[shardid][0]
+                max_d = docset[shardid][1]
+                self.docset.append((shardid, min_d, max_d))
+                doccount += max_d - min_d + 1
+            self._len = doccount
 
-        if self.verbose:
-            logging.info(
-                f"    Worker {self.rank} ingested {len(shardfrags)} shard fragments from {dataset}"
-            )
+            if self.verbose:
+                logging.info(
+                    f"    Worker {self.rank} ingested {len(shardfrags)} shard fragments from {dataset}"
+                )
 
-        # Shuffle shard files - guaranteed inconsistent across workers
-        seed = self.seed + self.rank
-        random.seed(seed)
-        random.shuffle(self.docset)
-        # Setup doc shuffle - same guarantee
-        self.lcg_state = seed
+            # Shuffle shard files - guaranteed inconsistent across workers
+            seed = self.seed + self.rank
+            random.seed(seed)
+            random.shuffle(self.docset)
+            # Setup doc shuffle - same guarantee
+            self.lcg_state = seed
 
     def _get_docid(self, i):
         """
@@ -841,8 +842,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                     yield self._construct_chunk(j, doc, n_chunks)
 
     def load_state_dict(self, state_dicts, sharded_input=False):
-        if not self.is_setup:
-            self.setup()
+        self.setup()
         assert (
             self.load_worldsize == self.worldsize
         ), "Streaming_Doc_Dataset does not support rescaling. Please use a Scalable_Shard_Dataset."
