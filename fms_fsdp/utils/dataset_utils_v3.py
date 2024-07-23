@@ -596,7 +596,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.docset: List[
             Any
         ] = []  # map of doc indices to (shardid, min docid, max docid)
-        self.docs_per_shard = {}
 
         # Position
         self.docset_index = 0
@@ -673,7 +672,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         docset = {}  # shardid -> (min docid, max docid)
         for i, (shard, frag) in enumerate(shardfrags):
             ndocs = doc_counts[os.path.join(dataset, shard)]
-            self.docs_per_shard[shard] = ndocs
             doc_start = (ndocs * frag) // self.worldsize
             doc_end = (
                 ndocs * frag + ndocs
