@@ -505,7 +505,7 @@ def test_reload_complete_epoch():
     reload_single_epoch_check(basic_loader)
     reload_single_epoch_check(functools.partial(basic_scalable, n_logical_shards=8))
     reload_single_epoch_check(basic_sampler)
-    reload_single_epoch_check(functools.partial(basic_scalable, n_logical_shards=8))
+    reload_single_epoch_check(functools.partial(basic_scalable_sampler, n_logical_shards=8))
 
 
 def test_eos_bos_chunking():
