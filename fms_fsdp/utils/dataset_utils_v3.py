@@ -4,6 +4,7 @@ import math
 import os
 import random
 import time
+from copy import deepcopy
 from typing import Any, Callable, List, Optional, Set, Type, Union
 
 import pyarrow as pa
@@ -584,6 +585,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         super(Streaming_Doc_Dataset, self).__init__(rank, worldsize)
         self.seed = seed
         self.data = datapath
+        self.dataset = ""
         self.min_length = min_length
         assert max_chunksize > 0, f"Max chunksize must be a nonzero positive integer"
         self.chunksize = max_chunksize
@@ -618,12 +620,15 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             "lcg_state",
         ]
 
+        self.is_setup = False
+
     def setup(self):
         """
         All rank-dependent setup, which must occur after init
         (rank assignment, subdataset splitting, etc.)
         """
         datapath = self.data
+        self.is_setup = True
 
         # Gather per-file document counts from metadata count file(s)
         countfiles = [
@@ -766,7 +771,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 return state
 
     def __iter__(self):
-        self.setup()
+        if not self.is_setup:
+            self.setup()
         docset_offset = self.docset_index
         lcg_offset = self.lcg_state
         residual_chunks = self.chunk_index + 1  # pick up AFTER where the ckp left off
@@ -835,6 +841,8 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                     yield self._construct_chunk(j, doc, n_chunks)
 
     def load_state_dict(self, state_dicts, sharded_input=False):
+        if not self.is_setup:
+            self.setup()
         assert (
             self.load_worldsize == self.worldsize
         ), "Streaming_Doc_Dataset does not support rescaling. Please use a Scalable_Shard_Dataset."
