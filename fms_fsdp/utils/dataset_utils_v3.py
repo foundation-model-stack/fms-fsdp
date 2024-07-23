@@ -585,7 +585,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         super(Streaming_Doc_Dataset, self).__init__(rank, worldsize)
         self.seed = seed
         self.data = datapath
-        self.dataset = ""
         self.min_length = min_length
         assert max_chunksize > 0, f"Max chunksize must be a nonzero positive integer"
         self.chunksize = max_chunksize
@@ -606,7 +605,6 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.tokens_seen = 0
         self.docs_seen = 0
         self.percent_seen = 0
-        self.lcg_state = 0
 
         self.state_params = [
             "dataset",
@@ -619,7 +617,11 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             "lcg_state",
         ]
 
+        # Setup flags
         self.is_setup = False
+        self._len = 0
+        self.dataset = ""
+        self.lcg_state = 0
 
     def setup(self):
         """
