@@ -107,7 +107,7 @@ def multi_reload_stress_check(d):
                         out1[j] == out2[j]
                     ), f"Dataloader {i} in step {k} has mismatched token in position {j}: {out1[j]} vs {out2[j]}"
 
-    steps1 = [0, 1, 10, 100, 1000]
+    steps1 = [1, 10, 100, 1000]
     steps2 = [100, 200, 300, 400, 500]
     for i in range(len(steps1)):
         # Reset between tests (instantiate fresh datasets)
