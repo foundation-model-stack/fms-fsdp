@@ -916,7 +916,7 @@ class Scalable_Shard_Dataset(_Wrapper_Dataset):
     def __init__(
         self,
         dataset: Streaming_Doc_Dataset,
-        resample_condition: Callable = lambda _: True,
+        delimiter_token: Any,
         n_logical_shards: int = 2048,
         verbose=False,
     ):
@@ -929,7 +929,7 @@ class Scalable_Shard_Dataset(_Wrapper_Dataset):
         ), f"n_logical_shards {n_logical_shards} must be a positive integer"
 
         self.total_shards = n_logical_shards
-        self.resample = resample_condition
+        self.delimiter = delimiter_token
         self.verbose = verbose
 
         # Fields to be populated during setup / subdataset setup
@@ -991,7 +991,7 @@ class Scalable_Shard_Dataset(_Wrapper_Dataset):
             self.current_reader = ind
             # Read doc
             out = next(data[ind])
-            while not self.resample(out):
+            while out[-1] != self.delimiter:
                 yield out
                 out = next(data[ind])
             # Update state to show we've finished the doc
@@ -1055,14 +1055,14 @@ class Sampling_Dataset(_Wrapper_Dataset):
         self,
         datapath: str,
         dataset: Union[Scalable_Shard_Dataset, Streaming_Doc_Dataset],
-        resample_condition: Callable = lambda _: True,
+        delimiter_token: Any,
         datasets=None,
         weights=None,
         verbose=False,
     ):
         super().__init__(dataset)
         self.datapath = datapath
-        self.resample = resample_condition
+        self.delimiter = delimiter_token
         self.verbose = verbose
         self.datasets = (
             datasets
@@ -1114,7 +1114,7 @@ class Sampling_Dataset(_Wrapper_Dataset):
                 # Finish current document
                 out = next(data[self.current_iterator])
                 self.tokens_seen[self.current_iterator] += len(out)
-                if self.resample(out):
+                if out[-1] == self.delimiter:
                     self.current_iterator = -1
                 yield out
             else:
@@ -1158,6 +1158,3 @@ class Sampling_Dataset(_Wrapper_Dataset):
             )
         return sharded_dicts
 
-
-def delimiter_condition(delimiter):
-    return lambda x: x[-1] == delimiter

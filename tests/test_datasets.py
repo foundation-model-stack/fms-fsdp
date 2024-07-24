@@ -402,7 +402,7 @@ def basic_sampler(
     return Sampling_Dataset(
         tmpdir.name,
         basic_loader(rank, worldsize, datasets[:1], max_chunksize, None),
-        delimiter_condition(-1),
+        -1,
         datasets,
         weights,
     )
@@ -419,7 +419,7 @@ def basic_scalable(
     assert len(datasets) == 1, "Basic loader takes only 1 dataset"
     return Scalable_Shard_Dataset(
         basic_loader(rank, worldsize, datasets, max_chunksize, bos_token),
-        delimiter_condition(-1),
+        -1,
         n_logical_shards,
     )
 
@@ -437,7 +437,7 @@ def basic_sampler_scalable(
         basic_scalable(
             rank, worldsize, datasets[:1], max_chunksize, n_logical_shards, None
         ),
-        delimiter_condition(-1),
+        -1,
         datasets,
         weights,
     )
@@ -581,7 +581,7 @@ def test_multi_reload_stress():
 
     # Scalable shard dataset
     d2 = lambda x: [
-        Scalable_Shard_Dataset(d, delimiter_condition(-1), n_logical_shards=15)
+        Scalable_Shard_Dataset(d, -1, n_logical_shards=15)
         for d in x
     ]
     multi_reload_stress_check(lambda: d2(d1()))
@@ -591,7 +591,7 @@ def test_multi_reload_stress():
         Sampling_Dataset(
             tmpdir.name,
             d,
-            delimiter_condition(-1),
+            -1,
             datasets=["dataset_1", "dataset_2"],
             weights=[3, 5],
         )
@@ -754,6 +754,7 @@ class RandCounter:
         self.i = 0
         self.rank = 0
         self.worldsize = 1
+        self.datapath = tmpdir.name
 
     def __iter__(self):
         while True:
@@ -840,6 +841,7 @@ class SteadyCounter:
         self.i = 0
         self.rank = 0
         self.worldsize = 1
+        self.datapath = tmpdir.name
         self.l = l
 
     def __iter__(self):
@@ -873,17 +875,7 @@ def test_checkpoint_reload_match():
     Check that the auto-checkpointer saves and loads correctly, and that loaded checkpoints
     resume properly (matching the continued behavior of the saved ones)
     """
-    datasets = [
-        Sampling_Dataset(
-            tmpdir.name,
-            Streaming_Doc_Dataset,
-            i,
-            3,
-            -1,
-            datasets=["dataset_1", "dataset_2"],
-            weights=[3, 5],
-            max_chunksize=17,
-        )
+    datasets = [basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3,5], max_chunksize=17)
         for i in range(3)
     ]
     datasets = [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets]
@@ -913,17 +905,7 @@ def test_checkpoint_reload_match():
     ), f"Expected three checkpoint shards (found {len(ckp_shards)})"
 
     # Create a second loader, pointing to first's checkpoint
-    datasets2 = [
-        Sampling_Dataset(
-            tmpdir.name,
-            Streaming_Doc_Dataset,
-            i,
-            3,
-            -1,
-            datasets=["dataset_1", "dataset_2"],
-            weights=[3, 5],
-            max_chunksize=17,
-        )
+    datasets2 = [basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3,5], max_chunksize=17)
         for i in range(3)
     ]
     datasets2 = [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets2]
