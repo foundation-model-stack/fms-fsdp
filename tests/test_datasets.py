@@ -580,10 +580,7 @@ def test_multi_reload_stress():
     multi_reload_stress_check(d1)
 
     # Scalable shard dataset
-    d2 = lambda x: [
-        Scalable_Shard_Dataset(d, -1, n_logical_shards=15)
-        for d in x
-    ]
+    d2 = lambda x: [Scalable_Shard_Dataset(d, -1, n_logical_shards=15) for d in x]
     multi_reload_stress_check(lambda: d2(d1()))
 
     # Sampling dataset
@@ -875,7 +872,8 @@ def test_checkpoint_reload_match():
     Check that the auto-checkpointer saves and loads correctly, and that loaded checkpoints
     resume properly (matching the continued behavior of the saved ones)
     """
-    datasets = [basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3,5], max_chunksize=17)
+    datasets = [
+        basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3, 5], max_chunksize=17)
         for i in range(3)
     ]
     datasets = [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets]
@@ -905,7 +903,8 @@ def test_checkpoint_reload_match():
     ), f"Expected three checkpoint shards (found {len(ckp_shards)})"
 
     # Create a second loader, pointing to first's checkpoint
-    datasets2 = [basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3,5], max_chunksize=17)
+    datasets2 = [
+        basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3, 5], max_chunksize=17)
         for i in range(3)
     ]
     datasets2 = [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets2]
