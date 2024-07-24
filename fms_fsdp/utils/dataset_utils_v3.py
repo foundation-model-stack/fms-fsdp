@@ -933,10 +933,10 @@ class Scalable_Shard_Dataset(_Wrapper_Dataset):
         self.verbose = verbose
 
         # Fields to be populated during setup / subdataset setup
-        self.data = []
-        self.logicals_owned = []
+        self.data: List[Streaming_Doc_Dataset] = []
+        self.logicals_owned: List[int] = []
         self.n_logicals = 0
-        self.n_docs_remaining = []
+        self.n_docs_remaining: List[int] = []
         self.generator = None
 
         # Position "state", used only for maintaining order when n_workers is unchanged
