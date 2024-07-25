@@ -7,6 +7,7 @@ from fms_fsdp.utils.dataset_utils import (
     Preprocess_Dataset,
     Sampling_Dataset,
     Scalable_Shard_Dataset,
+    Streaming_Doc_Dataset,
 )
 
 
@@ -68,20 +69,31 @@ def get_data_loader(cfg, rank, world_size):
         int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip()) > 0
     ]
     droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
-    data = Sampling_Dataset(
+    # Base reader layer
+    data = Streaming_Doc_Dataset(
         cfg.data_path,
-        Scalable_Shard_Dataset,
         rank,
         world_size,
         cfg.eos_token,
         bos_token=cfg.bos_token,
         strip_tokens=set(droplist),
         min_length=3,
+        seed=cfg.seed,
+    )
+    # Add rescaling/resharding
+    data = Scalable_Shard_Dataset(
+        data,
+        cfg.eos_token,
+        n_logical_shards=cfg.logical_shards,
+    )
+    # Add multi-dataset handling
+    data = Sampling_Dataset(
+        cfg.data_path,
+        data,
+        cfg.eos_token,
         datasets=datasets,
         weights=weights,
-        seed=cfg.seed,
         verbose=(rank == 0),
-        n_logical_shards=cfg.logical_shards,
     )
     # Wrap above dataset in packing logic to form constant-length lines.
     data = Buffer_Dataset(
