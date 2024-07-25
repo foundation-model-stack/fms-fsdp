@@ -36,14 +36,7 @@ torch.data.IterableDataset -> _Stateful_Dataset -> _Wrapper_Dataset.
 single `_Stateful_Dataset` and iterates via calling its wrapped dataset any number of times, 
 then applying some sort of post-processing and yielding the result. Users build data processing 
 pipelines by wrapping a base `_Stateful_Dataset` in any number of `_Wrapper_Dataset` layers, 
-which is then passed to the torch DataLoader.
-
-NOTE: `_Wrapper_Dataset` currently only implements wrapping a single instantiated sub-dataset layer. 
-Many layers need multiple sub-layers (i.e. random sampling from distinct data sources). These are 
-currently implemented as base `_Stateful_Datasets` that take the class of their sub-layers plus any 
-pass-through arguments, and instantiate all those sub-layers. This is easy on the user, who no longer 
-needs to instantiate large sets of sub-layers in their code, but leads to awkwardness in this file. 
-Cleanup is planned for the future. 
+which is then passed to the torch DataLoader. 
 """
 
 
@@ -88,15 +81,25 @@ class _Stateful_Dataset(data.IterableDataset):
         ), f"Data path {datapath} must be a non-empty folder or None"
         self.state_params: List[str] = []
         self.reshard_params: List[str] = []
+
+        # Default fields
         self.datapath = datapath
         self.rank = rank
         self.worldsize = worldsize
-        self.load_worldsize = (
-            worldsize  # Enable calling load_state_dict() directly, assume no rescaling
-        )
+
+        # Setup / loading flags
+        self.load_worldsize = worldsize
         self.is_setup = False
 
     def setup(self):
+        """
+        This method should contain all setup depending on datapath or rank.
+        It is called after init, but immediately before any other operation.
+        Certain operations higher up in the pipeline may change rank or datapath
+        after init (for example, wrapping in a subdataset sampler layer, or copying
+        to worker processes), so all rank- and datapth- dependent ops are deferred to
+        this function.
+        """
         if not self.is_setup:
             self.is_setup = True
             pass
@@ -206,7 +209,7 @@ class _Stateful_Dataset(data.IterableDataset):
 class _Wrapper_Dataset(_Stateful_Dataset):
     """
     Stub for nested wrappers of _Stateful_Datasets. Extends state fns with recursion.
-    Requires a single instantiated sub-dataset.
+    Requires a single instantiated sub-dataset (which may be replicated during setup fn).
     """
 
     def __init__(
@@ -214,21 +217,22 @@ class _Wrapper_Dataset(_Stateful_Dataset):
         dataset: _Stateful_Dataset,
     ):
         self.dataset = dataset
+        # Inherit default flags from sub-dataset
         super().__init__(
             self.dataset.datapath, self.dataset.rank, self.dataset.worldsize
         )
 
     def setup(self):
         """
-        Datapath/rank/worldsize percolate upwards recursively during initialization, now
-        project any desired changes downward, also recursively.
+        Datapath/rank/worldsize percolate upwards recursively during initialization, so
+        now we project any desired changes downward, also recursively.
+        Any code overriding this function should still include this functionality.
         """
         if not self.is_setup:
             self.is_setup = True
             self.dataset.datapath = self.datapath
             self.dataset.rank = self.rank
             self.dataset.worldsize = self.worldsize
-            self.dataset.load_worldsize = self.load_worldsize
             self.dataset.setup()
 
     def load_state_dict(self, state_dicts, sharded_input=False):
@@ -384,7 +388,8 @@ class Preload_Buffer_Dataset(_Wrapper_Dataset):
     Passes randomly sampled outputs one by one.
     Ensures local mixing of data without relying on sliding windows or shuffling of large buffers.
     Any two consecutive inputs will be separated by window_size steps in expectation.
-    Rescaling-enabled: buffers that shrink will re-grow to window_size, buffers that expand stay large.
+    Rescaling-enabled: buffers that shrink will re-grow to window_size,
+    buffers that expand will shrink back down to window_size.
     ...
     Args
     ----
@@ -413,15 +418,21 @@ class Preload_Buffer_Dataset(_Wrapper_Dataset):
             # Pad out buffer if needed
             self._pad_buffer()
 
-            # Load a point to buffer if necessary
+            # If buffer is undersized, add a datapoint
             if self.buffer_size < self.window_size:
                 self.buffer[self.buffer_size] = next(dataset)
                 self.buffer_size += 1
 
-            # Swap out randomly sampled value from buffer
+            # Swap out randomly sampled value from buffer.
+            # If buffer is small, add new item.
+            # If buffer is large, pop last item into that slot.
             i = torch.randint(self.buffer_size, (1,), generator=self.generator).item()
             out = self.buffer[i]
-            self.buffer[i] = next(dataset)
+            if self.buffer_size > self.window_size:
+                self.buffer[i] = self.buffer[self.buffer_size - 1]
+                self.buffer_size -= 1
+            else:
+                self.buffer[i] = next(dataset)
             yield out
 
     def _pad_buffer(self):
@@ -470,10 +481,6 @@ class Buffer_Dataset(_Wrapper_Dataset):
         Token to append to every output sequence. If None, no token is added. Type should match data type.
     pad_token : any | None
         Token used to fill out output sequence. Type should match data type.
-    drop_final_token : any | None
-        Drop the final token of each document if it matches this value?
-        (For edge case where bos=eos=None, and sep already appears at beginning of each doc -
-        drop added extra sep from end of doc)
     """
 
     def __init__(
@@ -658,7 +665,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
     def setup(self):
         """
         All rank-dependent setup, which must occur after init
-        (rank assignment, subdataset splitting, etc.)
+        (rank assignment, data partitioning, shuffling)
         """
         if not self.is_setup:
             datapath = self.datapath
@@ -721,7 +728,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
                 if doc_end > max_d:
                     docset[shard][1] = doc_end
 
-            # Add all of this dataset's shard entries to self.docset
+            # Add shard entries to self.docset
             doccount = 0
             for shardid in docset:
                 min_d = docset[shardid][0]
@@ -879,7 +886,7 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         self.setup()
         assert (
             self.load_worldsize == self.worldsize
-        ), f"Streaming_Doc_Dataset does not support rescaling ({self.load_worldsize, self.worldsize}). Please use a Scalable_Shard_Dataset."
+        ), f"Streaming_Doc_Dataset does not support rescaling (ckp size: {self.load_worldsize}, world size: {self.worldsize}). Please use a Scalable_Shard_Dataset."
         d = self.dataset
         out = super().load_state_dict(state_dicts, sharded_input)
         assert (
@@ -890,27 +897,21 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
 class Scalable_Shard_Dataset(_Wrapper_Dataset):
     """
-    A _Stateful_Dataset implementing rescalability: loading from checkpoint into a different
+    A _Wrapper_Dataset implementing rescalability: loading from checkpoint into a different
     number of gpus will nonetheless keep avoiding all data previously seen in the current epoch.
-    This is accomplished by maintaining a large number of small Streaming_Doc_Datasets, which track
-    state individually and reshard over n_gpus.
-
-    All keywords except the first are simple pass-through arguments and are documented in Streaming_Doc_Dataset.
+    This is accomplished by maintaining a large number of small Streaming_Doc_Datasets, cloned from the
+    original dataset arg with adjusted ranks, which track state individually and reshard over n_gpus.
     ...
     Args
     ----
-    datapath : str
-        Absolute path to the dataset directory. Expects folder containing pyarrow shardfiles.
-    rank : int
-        Current worker index
-    worldsize : int
-        Total number of workers
-    delimiter_token : Any
+    dataset : Streaming_Doc_Dataset
+        Fully instantiated dataset. Cloned into logical workers during setup fn.
+    delimiter_token : any
         Token used to indicate sequence/document breaks. Type should match data type.
     n_logical_shards : int
         Number of logical shards. Must be a multiple of world size.
-    ...
-        Pass-through args, see Streaming_Doc_Dataset
+    verbose : bool
+        Track setup progress?
     """
 
     def __init__(
@@ -1027,7 +1028,7 @@ class Scalable_Shard_Dataset(_Wrapper_Dataset):
 
 class Sampling_Dataset(_Wrapper_Dataset):
     """
-    A _Stateful_Dataset implementing percentage-based sampling: weights can be floats, and the
+    A _Wrapper_Dataset implementing percentage-based sampling: weights can be floats, and the
     number of tokens seen from each subdataset will match those weights as closely as possible.
     This is accomplished by maintaining a _Stateful_Dataset for each subdataset, and tracking
     the number of tokens emitted by each. Whichever loader is furthest from its target will be
@@ -1038,8 +1039,11 @@ class Sampling_Dataset(_Wrapper_Dataset):
     ...
     Args
     ----
-    dataset_type : Scalable_Shard_Dataset | Streaming_Doc_Dataset
-        Underlying iterator for each desired subdataset
+    datapath : str
+        Absolute path to the dataset directory. Expects directory to contain subfolders with
+        pyarrow shardfiles, and also a 'meta' folder with metadata csv file inside.
+    dataset : Scalable_Shard_Dataset | Streaming_Doc_Dataset
+        Fully instantiated dataset. Cloned across desired subdatasets during setup.
     delimiter_token : Any
         Token used to indicate sequence/document breaks. Type should match data type.
     datasets : list[str] | None
@@ -1047,8 +1051,8 @@ class Sampling_Dataset(_Wrapper_Dataset):
     weights : list(float) | None
         Weights describing what percent of emitted tokens should come from each subdataset.
         Need not sum to 1. If None, tokens are drawn evenly.
-    ...
-        Pass-through args, see Streaming_Doc_Dataset or Scalable_Shard_Dataset
+    verbose : bool
+        Track setup progress?
     """
 
     def __init__(
@@ -1097,8 +1101,8 @@ class Sampling_Dataset(_Wrapper_Dataset):
             for i, d in enumerate(self.datasets):
                 self.data.append(deepcopy(self.dataset))
                 self.data[-1].datapath = os.path.join(self.datapath, d)
-                for flag in ["rank", "worldsize", "load_worldsize"]:
-                    setattr(self.data[-1], flag, getattr(self, flag))
+                self.data[-1].rank = self.rank
+                self.data[-1].worldsize = self.worldsize
                 if self.verbose:
                     logging.info(
                         f"Worker {self.rank} assembled subdataset iterator for {d}, {i+1} of {len(self.datasets)}"
