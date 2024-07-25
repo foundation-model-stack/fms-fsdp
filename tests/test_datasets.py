@@ -8,7 +8,7 @@ from itertools import chain
 import pyarrow as pa
 import torch
 
-from fms_fsdp.utils.dataset_utils_v3 import *
+from fms_fsdp.utils.dataset_utils import *
 
 
 # Generates test data in a temp directory, and returns that tempdir object.
