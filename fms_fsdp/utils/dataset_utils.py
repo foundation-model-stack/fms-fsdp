@@ -895,6 +895,137 @@ class StreamingDocDataset(_StatefulDataset):
         return out
 
 
+class ScalableShardDataset(_WrapperDataset):
+    """
+    A _WrapperDataset implementing rescalability: loading from checkpoint into a different
+    number of gpus will nonetheless keep avoiding all data previously seen in the current epoch.
+    This is accomplished by maintaining a large number of small StreamingDocDatasets, cloned from the
+    original dataset arg with adjusted ranks, which track state individually and reshard over n_gpus.
+    ...
+    Args
+    ----
+    dataset : StreamingDocDataset
+        Fully instantiated dataset. Cloned into logical workers during setup fn.
+    delimiter_token : any
+        Token used to indicate sequence/document breaks. Type should match data type.
+    n_logical_shards : int
+        Number of logical shards. Must be a multiple of world size.
+    verbose : bool
+        Track setup progress?
+    """
+
+    def __init__(
+        self,
+        dataset: StreamingDocDataset,
+        delimiter_token: Any,
+        n_logical_shards: int = 2048,
+        verbose=False,
+    ):
+        super().__init__(dataset)
+        assert (
+            n_logical_shards % self.worldsize == 0
+        ), f"World size {self.worldsize} must divide n_logical_shards {n_logical_shards} evenly"
+        assert (
+            n_logical_shards > 0
+        ), f"n_logical_shards {n_logical_shards} must be a positive integer"
+
+        self.total_shards = n_logical_shards
+        self.delimiter = delimiter_token
+        self.verbose = verbose
+
+        # Fields to be populated during setup / subdataset setup
+        self.data: List[StreamingDocDataset] = []
+        self.logicals_owned: List[int] = []
+        self.n_logicals = 0
+        self.n_docs_remaining: List[int] = []
+        self.generator = None
+
+        # Position "state", used only for maintaining order when n_workers is unchanged
+        # For scaling up or down, logical position is meaningless, and reset
+        self.current_reader = None
+        self.logical_shard_states = None
+        self.g_state = None
+
+        self.state_params = ["current_reader", "g_state"]
+        self.reshard_params = ["n_docs_remaining", "logical_shard_states"]
+
+    def setup(self):
+        if not self.is_setup:
+            self.is_setup = True
+            n_logical_shards = self.total_shards
+            logicals = list(range(n_logical_shards))
+            self.logicals_owned = _shard_partition(logicals, self.rank, self.worldsize)
+            self.n_logicals = n_logical_shards // self.worldsize
+            assert len(self.logicals_owned) == self.n_logicals
+
+            # Build logical shards
+            for i in range(self.n_logicals):
+                self.data.append(deepcopy(self.dataset))
+                self.data[-1].worldsize = n_logical_shards
+                self.data[-1].load_worldsize = n_logical_shards
+                self.data[-1].rank = self.logicals_owned[i]
+                self.data[-1].datapath = self.datapath
+                self.data[-1].verbose = self.rank == 0
+                if self.verbose:
+                    logging.info(
+                        f"Worker {self.rank} assembled logical shard {self.logicals_owned[i]}, {i+1} of {self.n_logicals}"
+                    )
+            [d.setup() for d in self.data]
+            self.n_docs_remaining = [d._len for d in self.data]
+
+            self.generator = torch.Generator().manual_seed(self.rank)
+
+    def __iter__(self):
+        self.setup()
+        # Grab one doc at a time in random order
+        data = [iter(d) for d in self.data]
+        while True:
+            # Sample logical shard (or load from ckp)
+            if self.current_reader is not None:
+                ind = self.current_reader
+            else:
+                ind = torch.multinomial(
+                    torch.tensor(self.n_docs_remaining, dtype=torch.float),
+                    1,
+                    generator=self.generator,
+                ).item()
+            self.current_reader = ind
+            # Read doc
+            out = next(data[ind])
+            while out[-1] != self.delimiter:
+                yield out
+                out = next(data[ind])
+            # Update state to show we've finished the doc
+            self.current_reader = None
+            self.n_docs_remaining[ind] -= 1
+            if sum(self.n_docs_remaining) == 0:
+                self.n_docs_remaining = [d._len for d in self.data]
+                self.generator.manual_seed(self.rank)
+            # Return final piece of doc
+            yield out
+
+    def state_dict(self):
+        self.setup()
+        # Write generator state manually
+        self.g_state = self.generator.get_state()
+        # Recursive fetch
+        self.logical_shard_states = [d.state_dict() for d in self.data]
+        return _StatefulDataset.state_dict(self)
+
+    def load_state_dict(self, state_dicts, sharded_input=False):
+        self.setup()
+        sharded_dicts = _StatefulDataset.load_state_dict(
+            self, state_dicts, sharded_input
+        )
+        # Manually set generator state if it exists
+        if self.g_state is not None:
+            self.generator.set_state(self.g_state)
+        # Recursive set
+        for i in range(self.n_logicals):
+            self.data[i].load_state_dict([self.logical_shard_states[i]], True)
+        return sharded_dicts
+
+
 class SamplingDataset(_WrapperDataset):
     """
     A _WrapperDataset implementing percentage-based sampling: weights can be floats, and the
@@ -1029,135 +1160,4 @@ class SamplingDataset(_WrapperDataset):
                 ],
                 True,
             )
-        return sharded_dicts
-
-
-class ScalableShardDataset(_WrapperDataset):
-    """
-    A _WrapperDataset implementing rescalability: loading from checkpoint into a different
-    number of gpus will nonetheless keep avoiding all data previously seen in the current epoch.
-    This is accomplished by maintaining a large number of small StreamingDocDatasets, cloned from the
-    original dataset arg with adjusted ranks, which track state individually and reshard over n_gpus.
-    ...
-    Args
-    ----
-    dataset : StreamingDocDataset
-        Fully instantiated dataset. Cloned into logical workers during setup fn.
-    delimiter_token : any
-        Token used to indicate sequence/document breaks. Type should match data type.
-    n_logical_shards : int
-        Number of logical shards. Must be a multiple of world size.
-    verbose : bool
-        Track setup progress?
-    """
-
-    def __init__(
-        self,
-        dataset: StreamingDocDataset,
-        delimiter_token: Any,
-        n_logical_shards: int = 2048,
-        verbose=False,
-    ):
-        super().__init__(dataset)
-        assert (
-            n_logical_shards % self.worldsize == 0
-        ), f"World size {self.worldsize} must divide n_logical_shards {n_logical_shards} evenly"
-        assert (
-            n_logical_shards > 0
-        ), f"n_logical_shards {n_logical_shards} must be a positive integer"
-
-        self.total_shards = n_logical_shards
-        self.delimiter = delimiter_token
-        self.verbose = verbose
-
-        # Fields to be populated during setup / subdataset setup
-        self.data: List[StreamingDocDataset] = []
-        self.logicals_owned: List[int] = []
-        self.n_logicals = 0
-        self.n_docs_remaining: List[int] = []
-        self.generator = None
-
-        # Position "state", used only for maintaining order when n_workers is unchanged
-        # For scaling up or down, logical position is meaningless, and reset
-        self.current_reader = None
-        self.logical_shard_states = None
-        self.g_state = None
-
-        self.state_params = ["current_reader", "g_state"]
-        self.reshard_params = ["n_docs_remaining", "logical_shard_states"]
-
-    def setup(self):
-        if not self.is_setup:
-            self.is_setup = True
-            n_logical_shards = self.total_shards
-            logicals = list(range(n_logical_shards))
-            self.logicals_owned = _shard_partition(logicals, self.rank, self.worldsize)
-            self.n_logicals = n_logical_shards // self.worldsize
-            assert len(self.logicals_owned) == self.n_logicals
-
-            # Build logical shards
-            for i in range(self.n_logicals):
-                self.data.append(deepcopy(self.dataset))
-                self.data[-1].worldsize = n_logical_shards
-                self.data[-1].load_worldsize = n_logical_shards
-                self.data[-1].rank = self.logicals_owned[i]
-                self.data[-1].datapath = self.datapath
-                self.data[-1].verbose = self.rank == 0
-                if self.verbose:
-                    logging.info(
-                        f"Worker {self.rank} assembled logical shard {self.logicals_owned[i]}, {i+1} of {self.n_logicals}"
-                    )
-            [d.setup() for d in self.data]
-            self.n_docs_remaining = [d._len for d in self.data]
-
-            self.generator = torch.Generator().manual_seed(self.rank)
-
-    def __iter__(self):
-        self.setup()
-        # Grab one doc at a time in random order
-        data = [iter(d) for d in self.data]
-        while True:
-            # Sample logical shard (or load from ckp)
-            if self.current_reader is not None:
-                ind = self.current_reader
-            else:
-                ind = torch.multinomial(
-                    torch.tensor(self.n_docs_remaining, dtype=torch.float),
-                    1,
-                    generator=self.generator,
-                ).item()
-            self.current_reader = ind
-            # Read doc
-            out = next(data[ind])
-            while out[-1] != self.delimiter:
-                yield out
-                out = next(data[ind])
-            # Update state to show we've finished the doc
-            self.current_reader = None
-            self.n_docs_remaining[ind] -= 1
-            if sum(self.n_docs_remaining) == 0:
-                self.n_docs_remaining = [d._len for d in self.data]
-                self.generator.manual_seed(self.rank)
-            # Return final piece of doc
-            yield out
-
-    def state_dict(self):
-        self.setup()
-        # Write generator state manually
-        self.g_state = self.generator.get_state()
-        # Recursive fetch
-        self.logical_shard_states = [d.state_dict() for d in self.data]
-        return _StatefulDataset.state_dict(self)
-
-    def load_state_dict(self, state_dicts, sharded_input=False):
-        self.setup()
-        sharded_dicts = _StatefulDataset.load_state_dict(
-            self, state_dicts, sharded_input
-        )
-        # Manually set generator state if it exists
-        if self.g_state is not None:
-            self.generator.set_state(self.g_state)
-        # Recursive set
-        for i in range(self.n_logicals):
-            self.data[i].load_state_dict([self.logical_shard_states[i]], True)
         return sharded_dicts
