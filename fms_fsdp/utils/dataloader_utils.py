@@ -1,13 +1,13 @@
 import torch
 
 from fms_fsdp.utils.dataset_utils import (
-    Buffer_Dataset,
-    Checkpoint_Dataset,
-    Preload_Buffer_Dataset,
-    Preprocess_Dataset,
-    Sampling_Dataset,
-    Scalable_Shard_Dataset,
-    Streaming_Doc_Dataset,
+    BufferDataset,
+    CheckpointDataset,
+    PreloadBufferDataset,
+    PreprocessDataset,
+    SamplingDataset,
+    ScalableShardDataset,
+    StreamingDocDataset,
 )
 
 
@@ -70,7 +70,7 @@ def get_data_loader(cfg, rank, world_size):
     ]
     droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
     # Base reader layer
-    data = Streaming_Doc_Dataset(
+    data = StreamingDocDataset(
         cfg.data_path,
         rank,
         world_size,
@@ -81,13 +81,13 @@ def get_data_loader(cfg, rank, world_size):
         seed=cfg.seed,
     )
     # Add rescaling/resharding
-    data = Scalable_Shard_Dataset(
+    data = ScalableShardDataset(
         data,
         cfg.eos_token,
         n_logical_shards=cfg.logical_shards,
     )
     # Add multi-dataset handling
-    data = Sampling_Dataset(
+    data = SamplingDataset(
         cfg.data_path,
         data,
         cfg.eos_token,
@@ -96,7 +96,7 @@ def get_data_loader(cfg, rank, world_size):
         verbose=(rank == 0),
     )
     # Wrap above dataset in packing logic to form constant-length lines.
-    data = Buffer_Dataset(
+    data = BufferDataset(
         data,
         cfg.seq_length + 1,
         bos_token=cfg.bol_token,
@@ -104,11 +104,11 @@ def get_data_loader(cfg, rank, world_size):
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
-    data = Preload_Buffer_Dataset(data, 10000)
+    data = PreloadBufferDataset(data, 10000)
     # Split line into input and target for the CLM task.
-    data = Preprocess_Dataset(data, causal_lm)
+    data = PreprocessDataset(data, causal_lm)
     # Enable auto-saving
-    data = Checkpoint_Dataset(
+    data = CheckpointDataset(
         data,
         cfg.ckpt_load_path,
         cfg.checkpoint_interval,
