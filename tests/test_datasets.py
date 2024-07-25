@@ -386,7 +386,7 @@ def basic_loader(
     bos_token=None,
 ):
     assert len(datasets) == 1, "Basic loader takes only 1 dataset"
-    return Streaming_Doc_Dataset(
+    return StreamingDocDataset(
         os.path.join(tmpdir.name, datasets[0]),
         rank,
         worldsize,
@@ -399,7 +399,7 @@ def basic_loader(
 def basic_sampler(
     rank=0, worldsize=1, datasets=["dataset_1"], weights=[1], max_chunksize=1000
 ):
-    return Sampling_Dataset(
+    return SamplingDataset(
         tmpdir.name,
         basic_loader(rank, worldsize, datasets[:1], max_chunksize, None),
         -1,
@@ -417,7 +417,7 @@ def basic_scalable(
     bos_token=None,
 ):
     assert len(datasets) == 1, "Basic loader takes only 1 dataset"
-    return Scalable_Shard_Dataset(
+    return ScalableShardDataset(
         basic_loader(rank, worldsize, datasets, max_chunksize, bos_token),
         -1,
         n_logical_shards,
@@ -432,7 +432,7 @@ def basic_sampler_scalable(
     max_chunksize=1000,
     n_logical_shards=7,
 ):
-    return Sampling_Dataset(
+    return SamplingDataset(
         tmpdir.name,
         basic_scalable(
             rank, worldsize, datasets[:1], max_chunksize, n_logical_shards, None
@@ -514,7 +514,7 @@ def test_eos_bos_chunking():
 
 def test_sampler_rates():
     """
-    A test for Sampling_Dataset with Streaming_ and Scalable_ subdatasets.
+    A test for SamplingDataset with Streaming_ and Scalable_ subdatasets.
     On the full dataset, with varying weights, on a single worker: verify that loaders pull subdatasets at regular intervals
     (verifying that they're regularly picking the most-underviewed subdataset at each step).
     """
@@ -568,7 +568,7 @@ def test_multi_reload_stress():
     """
     # Shard doc dataset
     d1 = lambda: [
-        Streaming_Doc_Dataset(
+        StreamingDocDataset(
             os.path.join(tmpdir.name, "dataset_2"),
             i,
             3,
@@ -580,12 +580,12 @@ def test_multi_reload_stress():
     multi_reload_stress_check(d1)
 
     # Scalable shard dataset
-    d2 = lambda x: [Scalable_Shard_Dataset(d, -1, n_logical_shards=15) for d in x]
+    d2 = lambda x: [ScalableShardDataset(d, -1, n_logical_shards=15) for d in x]
     multi_reload_stress_check(lambda: d2(d1()))
 
     # Sampling dataset
     d3 = lambda x: [
-        Sampling_Dataset(
+        SamplingDataset(
             tmpdir.name,
             d,
             -1,
@@ -601,16 +601,16 @@ def test_multi_reload_stress():
     multi_reload_stress_check(d4)
 
     # Add buffer dataset
-    d5 = lambda x: [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in x]
+    d5 = lambda x: [BufferDataset(d, 73, pack_hard=True, bos_token=-1) for d in x]
     multi_reload_stress_check(lambda: d5(d4()))
 
     # Add preload buffer dataset
-    d6 = lambda x: [Preload_Buffer_Dataset(d, 99) for d in x]
+    d6 = lambda x: [PreloadBufferDataset(d, 99) for d in x]
     # preload / sample / scale / doc pipeline
     multi_reload_stress_check(lambda: d6(d5(d4())))
 
 
-# SCALABLE_DATASET TESTS
+# SCALABLEDATASET TESTS
 
 
 def test_scalable_partitioning():
@@ -742,7 +742,7 @@ def test_scalable_sampler_reload_scale():
             ), f"Expected value {i*100+suf} not found in output set {ins}"
 
 
-# BUFFER_DATASET TESTS
+# BUFFERDATASET TESTS
 
 
 class RandCounter:
@@ -767,7 +767,7 @@ def test_buffer_format():
     for _ in range(100):
         # 100 trials of random length inputs
         base = RandCounter()
-        dataset = Buffer_Dataset(base, 100, pack_hard=True)
+        dataset = BufferDataset(base, 100, pack_hard=True)
         loader = iter(dataset)
         for _ in range(100):
             out = next(loader)
@@ -781,7 +781,7 @@ def test_buffer_format():
     # As above, but now with EOS tokens
     for _ in range(100):
         base = RandCounter()
-        dataset = Buffer_Dataset(base, 100, pack_hard=True, eos_token=-1)
+        dataset = BufferDataset(base, 100, pack_hard=True, eos_token=-1)
         loader = iter(dataset)
         for i in range(100):
             out = next(loader)
@@ -796,7 +796,7 @@ def test_buffer_format():
     # As above, but now with BOS tokens
     for _ in range(100):
         base = RandCounter()
-        dataset = Buffer_Dataset(base, 100, pack_hard=True, bos_token=-1)
+        dataset = BufferDataset(base, 100, pack_hard=True, bos_token=-1)
         loader = iter(dataset)
         for i in range(100):
             out = next(loader)
@@ -816,7 +816,7 @@ def test_buffer_delimiter_overlap():
     into the first slot in the next (and all subsequent) outputs. BOS should then refrain from adding.
     """
     dataset = basic_loader(max_chunksize=101)
-    dataset = Buffer_Dataset(dataset, 101, pack_hard=True, bos_token=-1)
+    dataset = BufferDataset(dataset, 101, pack_hard=True, bos_token=-1)
     loader = iter(dataset)
     for _ in range(100):
         out = next(loader)
@@ -829,7 +829,7 @@ def test_buffer_delimiter_overlap():
     ), f"Final token {out[-1]} does not end in expected value 99"
 
 
-# PRELOAD_BUFFER_DATASET TESTS
+# PRELOADBUFFERDATASET TESTS
 
 
 class SteadyCounter:
@@ -852,7 +852,7 @@ def test_preload_buffer_uniformity():
     With underlying SteadyCounter and window size 200, take 1000 steps.
     Ensure 95% of values between 0 and 100 are emitted.
     """
-    dataset = Preload_Buffer_Dataset(SteadyCounter(1), 200)
+    dataset = PreloadBufferDataset(SteadyCounter(1), 200)
     loader = iter(dataset)
     outs = []
 
@@ -864,7 +864,7 @@ def test_preload_buffer_uniformity():
     assert len(outs) > 95, f"Only {len(outs)} values <100 detected"
 
 
-# CHECKPOINT_DATASET TESTS
+# CHECKPOINTDATASET TESTS
 
 
 def test_checkpoint_reload_match():
@@ -876,9 +876,9 @@ def test_checkpoint_reload_match():
         basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3, 5], max_chunksize=17)
         for i in range(3)
     ]
-    datasets = [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets]
+    datasets = [BufferDataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets]
     datasets = [
-        Checkpoint_Dataset(x, os.path.join(tmpdir.name, "ckp_test"), 100, 2)
+        CheckpointDataset(x, os.path.join(tmpdir.name, "ckp_test"), 100, 2)
         for x in datasets
     ]
     loaders = [
@@ -907,9 +907,9 @@ def test_checkpoint_reload_match():
         basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3, 5], max_chunksize=17)
         for i in range(3)
     ]
-    datasets2 = [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets2]
+    datasets2 = [BufferDataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets2]
     datasets2 = [
-        Checkpoint_Dataset(x, os.path.join(tmpdir.name, "ckp_test"), 1000, 2)
+        CheckpointDataset(x, os.path.join(tmpdir.name, "ckp_test"), 1000, 2)
         for x in datasets2
     ]
 
