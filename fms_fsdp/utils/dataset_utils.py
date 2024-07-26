@@ -800,14 +800,6 @@ class StreamingDocDataset(_StatefulDataset):
                 pathsplit = os.path.split(pathsplit[0])
             pardir, dataset = pathsplit
             self.dataset = dataset
-            with open(os.path.join(pardir, "meta", countfiles[0]), "r") as csvfile:
-                reader = csv.DictReader(csvfile)
-                for row in reader:
-                    fullpath = row["dataset/filename"]
-                    prefix = fullpath.find("/" + dataset) + 1
-                    if prefix > 0:
-                        key = fullpath[prefix:]
-                        doc_counts[key] = int(row["documents"])
 
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
@@ -826,11 +818,40 @@ class StreamingDocDataset(_StatefulDataset):
                 for i in range(start_frag, end_frag)
             ]
 
+            # Assemble length of each owned shard file
+
+            countfiles = [
+                x
+                for x in os.listdir(os.path.join(pardir, "meta"))
+                if "counts" in x and "csv" in x
+            ]
+            doc_counts = {}
+            if len(countfiles) > 0:
+                # Count file exists, use it
+                countpath = os.path.join(pardir, "meta", countfiles[0])
+                with open(countpath, "r") as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        fullpath = row["dataset/filename"]
+                        prefix = fullpath.find("/" + dataset) + 1
+                        if prefix > 0:
+                            key = fullpath[prefix + len(dataset) + 1 :]
+                            doc_counts[key] = int(row["documents"])
+            else:
+                # Count file does not exist, touch every owned file for length
+                unique_shardfiles = set(shard for shard, frag in shardfrags)
+                doc_counts = {
+                    shard: pa.ipc.open_file(
+                        pa.memory_map(os.path.join(datapath, shard))
+                    ).num_record_batches
+                    for shard in unique_shardfiles
+                }
+
             # Read shardfrags, assemble doc list for each file shard (aggregating over fragments):
             ndocs = -1
             docset = {}  # shardid -> (min docid, max docid)
             for i, (shard, frag) in enumerate(shardfrags):
-                ndocs = doc_counts[os.path.join(dataset, shard)]
+                ndocs = doc_counts[shard]
                 doc_start = (ndocs * frag) // self.worldsize
                 doc_end = (
                     ndocs * frag + ndocs
