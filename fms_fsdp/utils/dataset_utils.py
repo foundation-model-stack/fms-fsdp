@@ -670,16 +670,8 @@ class StreamingDocDataset(_StatefulDataset):
         if not self.is_setup:
             datapath = self.datapath
             self.is_setup = True
-
-            # Gather per-file document counts from metadata count file(s)
-            countfiles = [
-                x
-                for x in os.listdir(os.path.join(os.path.dirname(datapath), "meta"))
-                if "counts" in x and "csv" in x
-            ]
-            assert len(countfiles) == 1
-            doc_counts = {}
             pathsplit = (datapath, "")
+            # May take an extra round to account for any trailing slashes
             while len(pathsplit[1]) == 0:
                 pathsplit = os.path.split(pathsplit[0])
             pardir, dataset = pathsplit
