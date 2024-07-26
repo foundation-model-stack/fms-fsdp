@@ -390,6 +390,7 @@ def basic_loader(
         os.path.join(tmpdir.name, datasets[0]),
         rank,
         worldsize,
+        ArrowHandler(),
         -1,
         max_chunksize=max_chunksize,
         bos_token=bos_token,
