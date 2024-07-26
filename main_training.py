@@ -1,5 +1,6 @@
 import math
 import os
+import time
 
 import fire
 import torch
@@ -74,9 +75,10 @@ def main(**kwargs):
     if not cfg.use_dummy_dataset:
         train_loader = get_data_loader(cfg, rank, world_size)
     else:
+        start = time.time()
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:
-        print("Datasets constructed!")
+        print("Datasets constructed!", time.time()-start)
 
     # FSDP
     model = FSDP(
