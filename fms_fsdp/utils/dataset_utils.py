@@ -8,8 +8,10 @@ from copy import deepcopy
 from typing import Any, Callable, List, Optional, Set, Type, Union
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import torch
 import torch.utils.data as data
+from transformers import AutoTokenizer
 
 from fms_fsdp.utils.checkpointing_utils import get_latest
 
@@ -261,6 +263,107 @@ class _WrapperDataset(_StatefulDataset):
                 )
         out.update(state)
         return out
+
+
+#### -------------------------    FILE READERS    ------------------------- ####
+
+
+class _ShardFileHandler:
+    """
+    Stub for shard file readers of different formats.
+    Must implement open, length, indexing, and slicing functions.
+    """
+
+    def open(self, path: str):
+        """
+        Open the file, to be indexed via self.get() method.
+        Avoid reading entire multi-Gb files when possible!
+        """
+        raise NotImplementedError
+
+    def length(self, path: str):
+        """
+        Calculate the number of documents in the given file.
+        Avoid reading entire multi-Gb files when possible!
+        """
+        raise NotImplementedError
+
+    def get(self, reader, index: int, drop_tokens: Set):
+        """
+        Given the output of self.open() and an index, return the document at that index.
+        Then, remove the first and/or last items if they appear in drop_tokens.
+        Try to avoid reading entire documents at a time in case of long documents,
+        but this is less important than avoiding reading entire files as above.
+        Output must support len().
+        """
+        raise NotImplementedError
+
+    def slice(self, doc, index: int, n_pull: int) -> List:
+        """
+        Given a long document, retrieve n_pull consecutive items starting from index.
+        Again, try to be memory-efficient when doing so, but efficiency in self.get()
+        and self.open() is far more important.
+        Must return a python list.
+        """
+        raise NotImplementedError
+
+
+class ArrowHandler(_ShardFileHandler):
+    """
+    Reader for indexable, pre-tokenized PyArrow shard files.
+    A preferred format as we can load document chunks without having to ever pull
+    the entire document or shard file, allowing for graceful handling of large documents.
+    Non-standard data format, though.
+    """
+
+    def open(self, path: str):
+        return pa.ipc.open_file(pa.memory_map(path))
+
+    def length(self, path: str):
+        return self.open(path).num_record_batches
+
+    def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
+        doc = reader.get_batch(index)["tokens"]
+        if doc[0].as_py() in drop_tokens:
+            doc = doc.slice(1, len(doc) - 1)
+        if doc[-1].as_py() in drop_tokens:
+            doc = doc.slice(0, len(doc) - 1)
+        return doc
+
+    def slice(self, doc: pa.UInt32Array, index: int, n_pull: int) -> List:
+        return doc.slice(index, n_pull).to_pylist()
+
+
+class ParquetHandler(_ShardFileHandler):
+    """
+    Reader for indexable parquet shard files, common in HF datasets.
+    Here we assume reasonably small shard files (<5Gb) and documents (<100k tokens),
+    as we rely on parquet/pandas for efficient file reading, and tokenize entire documents
+    before getting/slicing. However, this is a standard and widely-used data format.
+    """
+
+    def __init__(self, tokenizer_path):
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+    def open(self, path: str):
+        return pq.read_pandas(path, columns=["text"])["text"]
+
+    def length(self, path: str):
+        return pq.read_pandas(path, columns=[]).num_rows
+
+    def get(self, reader, index: int, drop_tokens: Set):
+        doc = self.tokenizer(str(reader[index]))["input_ids"]
+        if doc[0] in drop_tokens:
+            doc = doc[1:]
+        if doc[-1] in drop_tokens:
+            doc = doc[:-1]
+        return doc
+
+    def slice(self, doc: List, index: int, n_pull: int) -> List:
+        return doc[index : index + n_pull]
+
+
+#### -------------------------    PIPELINE LAYERS    ------------------------- ####
 
 
 class PreprocessDataset(_WrapperDataset):
@@ -588,6 +691,8 @@ class StreamingDocDataset(_StatefulDataset):
         Current worker index
     worldsize : int
         Total number of workers
+    filereader : _ShardFileReader
+        A file reader handling specific data shard file formats
     delimiter_token : Any
         Token used to indicate sequence/document breaks. Type should match data type. Required for downstream
         sampling logic (can be removed later via PreProcessDataset if needed).
@@ -613,6 +718,7 @@ class StreamingDocDataset(_StatefulDataset):
         datapath: str,
         rank: int,
         worldsize: int,
+        filehandler: _ShardFileHandler,
         delimiter_token: Any,
         bos_token: Optional[Any] = None,
         strip_tokens: Optional[Set[Any]] = set(),
@@ -624,6 +730,7 @@ class StreamingDocDataset(_StatefulDataset):
         super().__init__(datapath, rank, worldsize)
         self.seed = seed
         self.datapath = datapath
+        self.filehandler = filehandler
         self.min_length = min_length
         assert max_chunksize > 0, f"Max chunksize must be a nonzero positive integer"
         self.chunksize = max_chunksize
@@ -699,7 +806,6 @@ class StreamingDocDataset(_StatefulDataset):
                 shard
                 for shard in os.listdir(datapath)
                 if os.path.isfile(os.path.join(datapath, shard))
-                and "arrow" in os.path.join(datapath, shard)
             ]
             shards.sort()  # Ensure consistent sharding across machines
             start_frag = (self.rank * self.worldsize * len(shards)) // self.worldsize
@@ -773,7 +879,7 @@ class StreamingDocDataset(_StatefulDataset):
             del reader
             if self.verbose:
                 logging.info(f"Worker {self.rank} opening new file {newpath}")
-            reader = pa.ipc.open_file(newpath)
+            reader = self.filehandler.open(newpath)
             path = newpath
         return path, reader
 
@@ -789,7 +895,7 @@ class StreamingDocDataset(_StatefulDataset):
                 n_pull -= 1
             else:
                 start_index -= 1
-        chunk = doc.slice(start_index, n_pull).to_pylist()
+        chunk = self.filehandler.slice(doc, start_index, n_pull)
         self.tokens_seen += len(chunk)
         # Add bos/eos tokens if needed
         if self.bos is not None and j == 0:
@@ -839,11 +945,7 @@ class StreamingDocDataset(_StatefulDataset):
                 # Map id in range of owned docs to new (consistently) shuffled id
                 doclcg = self._random_map_docid(docrange)
                 docid = doclcg + mindoc
-                doc = reader.get_batch(docid)["tokens"]
-                if doc[0].as_py() in self.drop:
-                    doc = doc.slice(1, len(doc) - 1)
-                if doc[-1].as_py() in self.drop:
-                    doc = doc.slice(0, len(doc) - 1)
+                doc = self.filehandler.get(reader, docid, self.drop)
                 doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
                 if doclen >= self.min_length:
                     n_chunks = math.ceil(doclen / self.chunksize)
@@ -870,11 +972,7 @@ class StreamingDocDataset(_StatefulDataset):
             docid = self._random_map_docid(docrange) + mindoc
             newpath = os.path.join(self.datapath, shardid)
             path, reader = self._get_reader(path, newpath, reader)
-            doc = reader.get_batch(docid)["tokens"]
-            if doc[0].as_py() in self.drop:
-                doc = doc.slice(1, len(doc) - 1)
-            if doc[-1].as_py() in self.drop:
-                doc = doc.slice(0, len(doc) - 1)
+            doc = self.filehandler.get(reader, docid, self.drop)
             doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
             if doclen >= self.min_length:
                 n_chunks = math.ceil(doclen / self.chunksize)
