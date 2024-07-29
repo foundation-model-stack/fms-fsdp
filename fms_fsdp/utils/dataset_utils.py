@@ -334,7 +334,7 @@ class CheckpointDataset(_WrapperDataset):
         self.ministep = 0
 
     def setup(self):
-        if not self.is_setup():
+        if not self.is_setup:
             super().setup()
             self.load_from_path(self.load_path)
 
