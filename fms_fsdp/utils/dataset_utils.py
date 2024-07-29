@@ -328,12 +328,18 @@ class CheckpointDataset(_WrapperDataset):
             save_path = load_path
         else:
             save_path = os.path.join(save_path, "checkpoints")
+        self.load_path = load_path
         self.path = save_path
         self.step = 0
         self.ministep = 0
-        self.load_from_path(load_path)
+
+    def setup(self):
+        if not self.is_setup():
+            super().setup()
+            self.load_from_path(self.load_path)
 
     def __iter__(self):
+        self.setup()
         dataset = iter(self.dataset)
         while True:
             yield next(dataset)
