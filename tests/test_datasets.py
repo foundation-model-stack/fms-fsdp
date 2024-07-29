@@ -914,6 +914,7 @@ def test_checkpoint_reload_match():
         CheckpointDataset(x, os.path.join(tmpdir.name, "ckp_test"), 1000, 2)
         for x in datasets2
     ]
+    [d.setup() for d in datasets2]
 
     # Assert checkpoints have loaded correctly
     for d in datasets2:
