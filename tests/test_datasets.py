@@ -916,6 +916,8 @@ def test_checkpoint_reload_match():
     ]
     [d.setup() for d in datasets2]
 
+    [d.setup() for d in datasets2]
+
     # Assert checkpoints have loaded correctly
     for d in datasets2:
         assert d.step == 100, f"Expected to load back to step 100, got {d.step}"

@@ -427,7 +427,7 @@ class CheckpointDataset(_WrapperDataset):
         interval: int,
         steps_per_batch: int = 1,
         save_path: str = "",
-        reset_stepcount: bool = False
+        reset_stepcount: bool = False,
     ):
         super().__init__(dataset)
         self.interval = interval
@@ -468,7 +468,7 @@ class CheckpointDataset(_WrapperDataset):
     def _validate_ckp_path(self, path: str, verbose: bool = False):
         """
         Interpret path to appropriate checkpoint.
-        If found, return modified path. 
+        If found, return modified path.
         If not found, return empty string.
         """
         # Does path exists, and if it exists, is it non-empty?
@@ -513,7 +513,9 @@ class CheckpointDataset(_WrapperDataset):
     def load_from_path(self, path: str):
         save_path = self._validate_ckp_path(self.path, False)
         if len(save_path) > 0:
-            self.report(f"  Dataset: Detected a checkpoint in the save directory {save_path}. Restoring from this checkpoint.")
+            self.report(
+                f"  Dataset: Detected a checkpoint in the save directory {save_path}. Restoring from this checkpoint."
+            )
             path = save_path
         else:
             load_path = self._validate_ckp_path(self.load_path, True)
