@@ -41,8 +41,7 @@ class train_config:
     seed: int = 2023
 
     # continued training spec
-    reset_stepcount: bool = False
-    new_dataset: bool = False
+    resuming_dataset: bool = False
 
     # profiling
     use_profiler: bool = False

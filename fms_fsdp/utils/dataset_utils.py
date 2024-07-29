@@ -416,8 +416,6 @@ class CheckpointDataset(_WrapperDataset):
         when a full batch is formed. Defaults to 1.
     save_path : optional[str]
         Absolute path to checkpoint save directory. Defaults to load_path.
-    reset_stepcount : bool
-        After loading an external checkpoint, start counting new checkpoints from zero, or from loaded step?
     """
 
     def __init__(
@@ -427,7 +425,6 @@ class CheckpointDataset(_WrapperDataset):
         interval: int,
         steps_per_batch: int = 1,
         save_path: str = "",
-        reset_stepcount: bool = False,
     ):
         super().__init__(dataset)
         self.interval = interval
@@ -439,7 +436,6 @@ class CheckpointDataset(_WrapperDataset):
             save_path = os.path.join(save_path, "checkpoints")
         self.load_path = load_path
         self.path = save_path
-        self.reset_stepcount = reset_stepcount
         self.step = 0
         self.ministep = 0
 
@@ -523,8 +519,8 @@ class CheckpointDataset(_WrapperDataset):
                 return
             else:
                 path = load_path
-                if self.reset_stepcount:
-                    self.step = 0
+                # When loading from external ckp, always reset step count
+                self.step = 0
         # Proceed
         start = time.time()
         self.dataset.load_from_path(path)
