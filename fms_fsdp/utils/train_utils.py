@@ -84,6 +84,7 @@ def train(
         input = input.to(local_rank)
         label = label.to(local_rank)
 
+        # right here
         optimizer.zero_grad()
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
