@@ -573,6 +573,7 @@ def test_multi_reload_stress():
             os.path.join(tmpdir.name, "dataset_2"),
             i,
             3,
+            ArrowHandler(),
             -1,
             max_chunksize=17,
         )

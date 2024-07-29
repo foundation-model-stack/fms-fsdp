@@ -5,13 +5,13 @@ import os
 import random
 import time
 from copy import deepcopy
-from typing import Any, Callable, List, Optional, Set, Type, Union
+from typing import Any, Callable, List, Optional, Set, Union
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
 import torch.utils.data as data
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer  # type: ignore
 
 from fms_fsdp.utils.checkpointing_utils import get_latest
 
