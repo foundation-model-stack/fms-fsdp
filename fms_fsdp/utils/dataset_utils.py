@@ -315,6 +315,7 @@ class ArrowHandler(_ShardFileHandler):
     the entire document or shard file, allowing for graceful handling of large documents.
     Non-standard data format, though.
     """
+
     def __init__(self, col_name: str = "tokens"):
         self.col_name = col_name
 
