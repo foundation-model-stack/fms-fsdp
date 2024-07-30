@@ -81,9 +81,9 @@ def get_data_loader(cfg, rank, world_size):
         cfg.file_type in _handler_map
     ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
     if cfg.file_type == "hf_parquet":
-        filehandler = ParquetHandler(cfg.tokenizer_path)
+        filehandler = ParquetHandler(cfg.tokenizer_path, cfg.col_name)
     else:
-        filehandler = _handler_map[cfg.file_type]()
+        filehandler = _handler_map[cfg.file_type](cfg.col_name)
     # Base reader layer
     data = StreamingDocDataset(
         cfg.data_path,
