@@ -1,14 +1,22 @@
 import torch
 
 from fms_fsdp.utils.dataset_utils import (
+    ArrowHandler,
     BufferDataset,
     CheckpointDataset,
+    ParquetHandler,
     PreloadBufferDataset,
     PreprocessDataset,
     SamplingDataset,
     ScalableShardDataset,
     StreamingDocDataset,
 )
+
+
+_handler_map = {
+    "arrow": ArrowHandler,
+    "hf_parquet": ParquetHandler,
+}
 
 
 def get_dummy_loader(cfg, rank, world_size):
@@ -69,11 +77,19 @@ def get_data_loader(cfg, rank, world_size):
         int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip()) > 0
     ]
     droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
+    assert (
+        cfg.file_type in _handler_map
+    ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
+    if cfg.file_type == "hf_parquet":
+        filehandler = ParquetHandler(cfg.tokenizer_path, cfg.col_name)
+    else:
+        filehandler = _handler_map[cfg.file_type](cfg.col_name)
     # Base reader layer
     data = StreamingDocDataset(
         cfg.data_path,
         rank,
         world_size,
+        filehandler,
         cfg.eos_token,
         bos_token=cfg.bos_token,
         strip_tokens=set(droplist),

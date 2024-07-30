@@ -390,6 +390,7 @@ def basic_loader(
         os.path.join(tmpdir.name, datasets[0]),
         rank,
         worldsize,
+        ArrowHandler(),
         -1,
         max_chunksize=max_chunksize,
         bos_token=bos_token,
@@ -572,6 +573,7 @@ def test_multi_reload_stress():
             os.path.join(tmpdir.name, "dataset_2"),
             i,
             3,
+            ArrowHandler(),
             -1,
             max_chunksize=17,
         )
@@ -912,8 +914,6 @@ def test_checkpoint_reload_match():
         CheckpointDataset(x, os.path.join(tmpdir.name, "ckp_test"), 1000, 2)
         for x in datasets2
     ]
-    [d.setup() for d in datasets2]
-
     [d.setup() for d in datasets2]
 
     # Assert checkpoints have loaded correctly
