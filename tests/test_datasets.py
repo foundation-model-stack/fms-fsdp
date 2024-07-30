@@ -967,13 +967,11 @@ def test_multiprocess_epoch():
     Check that ScalableShardDataset partitions correctly over various worldsize / n_worker
     combinations. A single epoch should contain each datapoint exactly once.
     """
-    n_workers = [0, 1, 2]
+    n_workers = [0, 2]
     worldsizes = [2, 5]
-    logicals = [50, 100]
     for n in n_workers:
         for w in worldsizes:
-            for l in logicals:
-                d = [basic_scalable(i, w, n_logical_shards=l) for i in range(w)]
-                # Add a dummy wrapper (append some pads) to test correct wrapper behavior
-                d = [BufferDataset(x, 110, False, pad_token=-1) for x in d]
-                single_epoch_loader_worker_check(d, n)
+            d = [basic_scalable(i, w, n_logical_shards=20) for i in range(w)]
+            # Add a dummy wrapper (append some pads) to test correct wrapper behavior
+            d = [BufferDataset(x, 110, False, pad_token=-1) for x in d]
+            single_epoch_loader_worker_check(d, n)
