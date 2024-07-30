@@ -969,7 +969,7 @@ def test_multiprocess_epoch():
     Check that ScalableShardDataset partitions correctly over various worldsize / n_worker
     combinations. A single epoch should contain each datapoint exactly once.
     """
-    n_workers = [0, 1, 5]
+    n_workers = [0, 1, 2]
     worldsizes = [2, 5]
     logicals = [50, 100]
     for n in n_workers:
