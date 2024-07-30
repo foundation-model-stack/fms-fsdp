@@ -1126,7 +1126,9 @@ class ScalableShardDataset(_WrapperDataset):
             logicals = list(range(n_logical_shards))
             self.logicals_owned = _shard_partition(logicals, self.rank, self.worldsize)
             self.n_logicals = n_logical_shards // self.worldsize
-            assert len(self.logicals_owned) == self.n_logicals
+            assert (
+                len(self.logicals_owned) == self.n_logicals
+            ), "(world size * num workers) does not divide logical shards evenly"
 
             # Build logical shards
             for i in range(self.n_logicals):
