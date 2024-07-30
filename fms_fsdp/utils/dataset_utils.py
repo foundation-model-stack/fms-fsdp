@@ -88,6 +88,7 @@ class _StatefulDataset(data.IterableDataset):
         self.datapath = datapath
         self.rank = rank
         self.worldsize = worldsize
+        self.local_worldsize = -1
 
         # Setup / loading flags
         self.load_worldsize = worldsize
@@ -101,10 +102,21 @@ class _StatefulDataset(data.IterableDataset):
         after init (for example, wrapping in a subdataset sampler layer, or copying
         to worker processes), so all rank- and datapth- dependent ops are deferred to
         this function.
+        Currently, this function simply adjusts rank/worldsize to account for
+        multiprocess dataloaders.
         """
         if not self.is_setup:
             self.is_setup = True
-            pass
+            # Perform adjustment only if not already adjusted (i.e. via _WrapperDataset)
+            if self.local_worldsize == -1:
+                info = data.get_worker_info()
+                if info is None or info.num_workers == 1:
+                    # No multi-worker rank adjustment needed
+                    self.local_worldsize = 1
+                else:
+                    self.local_worldsize = info.num_workers
+                    self.worldsize = self.worldsize * self.local_worldsize
+                    self.rank = self.local_worldsize * self.rank + info.id
 
     def statename(self, x: str):
         # Note that this naming convention implicitly disallows repeated layers in the dataset pipeline
@@ -228,13 +240,16 @@ class _WrapperDataset(_StatefulDataset):
         """
         Datapath/rank/worldsize percolate upwards recursively during initialization, so
         now we project any desired changes downward, also recursively.
+        We also project local_worldsize downward to prevent subsequent layers from
+        further inflating the rank/worldsize - we only need to account for multiprocessing once!
         Any code overriding this function should still include this functionality.
         """
         if not self.is_setup:
-            self.is_setup = True
+            super().setup()
             self.dataset.datapath = self.datapath
             self.dataset.rank = self.rank
             self.dataset.worldsize = self.worldsize
+            self.dataset.local_worldsize = self.local_worldsize
             self.dataset.setup()
 
     def load_state_dict(self, state_dicts, sharded_input=False):
@@ -294,7 +309,7 @@ class _ShardFileHandler:
         Then, remove the first and/or last items if they appear in drop_tokens.
         Try to avoid reading entire documents at a time in case of long documents,
         but this is less important than avoiding reading entire files as above.
-        Output must support len().
+        Output must support len() method.
         """
         raise NotImplementedError
 
@@ -819,8 +834,8 @@ class StreamingDocDataset(_StatefulDataset):
         (rank assignment, data partitioning, shuffling)
         """
         if not self.is_setup:
+            super().setup()
             datapath = self.datapath
-            self.is_setup = True
             pathsplit = (datapath, "")
             # May take an extra round to account for any trailing slashes
             while len(pathsplit[1]) == 0:
@@ -1106,7 +1121,7 @@ class ScalableShardDataset(_WrapperDataset):
 
     def setup(self):
         if not self.is_setup:
-            self.is_setup = True
+            _StatefulDataset.setup(self)
             n_logical_shards = self.total_shards
             logicals = list(range(n_logical_shards))
             self.logicals_owned = _shard_partition(logicals, self.rank, self.worldsize)
@@ -1119,6 +1134,7 @@ class ScalableShardDataset(_WrapperDataset):
                 self.data[-1].worldsize = n_logical_shards
                 self.data[-1].load_worldsize = n_logical_shards
                 self.data[-1].rank = self.logicals_owned[i]
+                self.data[-1].local_worldsize = 1
                 self.data[-1].datapath = self.datapath
                 self.data[-1].verbose = self.rank == 0
                 if self.verbose:
@@ -1250,7 +1266,7 @@ class SamplingDataset(_WrapperDataset):
 
     def setup(self):
         if not self.is_setup:
-            self.is_setup = True
+            _StatefulDataset.setup(self)
             # Build subdataset iterators
             self.data = []
             for i, d in enumerate(self.datasets):
@@ -1258,6 +1274,7 @@ class SamplingDataset(_WrapperDataset):
                 self.data[-1].datapath = os.path.join(self.datapath, d)
                 self.data[-1].rank = self.rank
                 self.data[-1].worldsize = self.worldsize
+                self.data[-1].local_worldsize = self.local_worldsize
                 if self.verbose:
                     logging.info(
                         f"Worker {self.rank} assembled subdataset iterator for {d}, {i+1} of {len(self.datasets)}"

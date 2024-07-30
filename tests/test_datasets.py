@@ -375,6 +375,26 @@ def single_doc_bos_eos_check(loader, do_bos):
                 ), f"Expected chunk 2 to follow chunk1, got {c1[-1]} and {c2[0]}"
 
 
+def single_epoch_loader_worker_check(d, n_workers=0):
+    # For dataset_1 partitioned over logical shards / workers / ranks,
+    # check that every doc appears once per epoch
+    loaders = [
+        torch.utils.data.DataLoader(x, num_workers=n_workers, batch_size=1) for x in d
+    ]
+    loaders = [iter(l) for l in loaders]
+    n_steps = 100 // len(loaders)
+    ins = []
+    for _ in range(n_steps):
+        for l in loaders:
+            out = next(l)
+            ins.append(out[0].item())
+
+    for i in range(100):
+        assert (
+            i * 100 in ins
+        ), f"Line starting with {i * 100} failed to appear in generated data: worldsize {len(loaders)}, n_workers {n_workers}"
+
+
 # BASE DATASET TESTS
 
 
@@ -937,3 +957,23 @@ def test_checkpoint_reload_match():
             ), f"Expected same output lengths, got {len(out)}, {len(targ)}"
             for i, (x, y) in enumerate(zip(out, targ)):
                 assert x == y, f"Mismatch in position {i}: got {x}, {y}"
+
+
+# MULTIPROCESS DATALOADER WORKER TESTS
+
+
+def test_multiprocess_epoch():
+    """
+    Check that ScalableShardDataset partitions correctly over various worldsize / n_worker
+    combinations. A single epoch should contain each datapoint exactly once.
+    """
+    n_workers = [0, 1, 5]
+    worldsizes = [2, 5]
+    logicals = [50, 100]
+    for n in n_workers:
+        for w in worldsizes:
+            for l in logicals:
+                d = [basic_scalable(i, w, n_logical_shards=l) for i in range(w)]
+                # Add a dummy wrapper (append some pads) to test correct wrapper behavior
+                d = [BufferDataset(x, 110, False, pad_token=-1) for x in d]
+                single_epoch_loader_worker_check(d, n)
