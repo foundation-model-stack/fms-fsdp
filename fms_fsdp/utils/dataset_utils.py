@@ -355,6 +355,43 @@ class CheckpointDataset(_WrapperDataset):
         if self.rank == 0:
             print(msg)
 
+    def _validate_ckp_path(self, path: str, verbose: bool = False):
+        """
+        Interpret path to appropriate checkpoint.
+        If found, return modified path.
+        If not found, return empty string.
+        """
+        # Does path exists, and if it exists, is it non-empty?
+        if not os.path.exists(path) or len(os.listdir(path)) == 0:
+            if verbose:
+                self.report(
+                    f"  Dataset: No valid checkpoint detected at {path}, dataset starting from scratch."
+                )
+            return ""
+        # Check latest path
+        latest = os.path.join(path, get_latest(path))
+        if verbose:
+            self.report(f"Checkpoint detected at {latest}")
+        # If item is not a folder, exit early
+        if os.path.isfile(latest):
+            if verbose:
+                self.report(
+                    f"  Dataset: Detected checkpoint {latest} is a single file with no dataset info."
+                    + " Dataset starting from scratch."
+                )
+            return ""
+        # If item is a folder, check that it contains shard files
+        if len([x for x in os.listdir(latest) if "loader" in x]) == 0:
+            if verbose:
+                self.report(
+                    f"  Dataset: Detected checkpoint {latest} exists but contains no dataset checkpoints."
+                    + " Dataset starting from scratch."
+                )
+            return ""
+        # If item is a folder, get the step count
+        self.step = int(latest.split("_")[-2])
+        return latest
+
     def save_to_path(self, path: str):
         self.report(f"Saving dataset to {path}")
         start = time.time()
@@ -364,26 +401,23 @@ class CheckpointDataset(_WrapperDataset):
         )
 
     def load_from_path(self, path: str):
-        # If path does not exist, or exists but is empty, exit early
-        if not os.path.exists(path) or len(os.listdir(path)) == 0:
+        save_path = self._validate_ckp_path(self.path, False)
+        if len(save_path) > 0:
             self.report(
-                f"No valid checkpoint detected at {path}, dataset starting from scratch."
+                f"  Dataset: Detected a checkpoint in the save directory {save_path}. Restoring from this checkpoint."
             )
-            return
-        # Grab latest item in path
-        latest = os.path.join(path, get_latest(path))
-        self.report(f"Dataset checkpoint detected at {latest}")
-        # If item is not a folder, exit early
-        if os.path.isfile(latest):
-            self.report(
-                f"Checkpoint exists but contains no dataset! Dataset starting from scratch."
-            )
-            return
-        # If item is a folder, get the step count
-        self.step = int(latest.split("_")[-2])
+            path = save_path
+        else:
+            load_path = self._validate_ckp_path(self.load_path, True)
+            if len(load_path) == 0:
+                return
+            else:
+                path = load_path
+                # When loading from external ckp, always reset step count
+                self.step = 0
         # Proceed
         start = time.time()
-        self.dataset.load_from_path(latest)
+        self.dataset.load_from_path(path)
         self.report(f"Dataset checkpoint loaded! Load time: {time.time() - start}")
 
 

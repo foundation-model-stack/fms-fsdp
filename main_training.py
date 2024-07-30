@@ -118,7 +118,7 @@ def main(**kwargs):
     checkpointer = Checkpointer(
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
     )
-    model, optimizer, _, start_step, tokens_seen = checkpointer.load(
+    model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
         model,
         optimizer,
         None,
@@ -127,7 +127,7 @@ def main(**kwargs):
         else cfg.ckpt_load_path,
         strict=False,
     )
-    if cfg.reset_stepcount:
+    if not is_resuming:
         start_step = 0
         # Override loaded optim hyperparams with the current values
         for g in optimizer.param_groups:
