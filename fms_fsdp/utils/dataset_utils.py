@@ -315,6 +315,8 @@ class ArrowHandler(_ShardFileHandler):
     the entire document or shard file, allowing for graceful handling of large documents.
     Non-standard data format, though.
     """
+    def __init__(self, col_name: str = "tokens"):
+        self.col_name = col_name
 
     def open(self, path: str):
         return pa.ipc.open_file(pa.memory_map(path))
@@ -323,7 +325,7 @@ class ArrowHandler(_ShardFileHandler):
         return self.open(path).num_record_batches
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
-        doc = reader.get_batch(index)["tokens"]
+        doc = reader.get_batch(index)[self.col_name]
         if doc[0].as_py() in drop_tokens:
             doc = doc.slice(1, len(doc) - 1)
         if doc[-1].as_py() in drop_tokens:
@@ -342,11 +344,12 @@ class ParquetHandler(_ShardFileHandler):
     before getting/slicing. However, this is a standard and widely-used data format.
     """
 
-    def __init__(self, tokenizer_path):
+    def __init__(self, tokenizer_path: str, col_name: str = "text"):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        self.col_name = col_name
 
     def open(self, path: str):
-        return pq.read_pandas(path, columns=["text"])["text"]
+        return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
 
     def length(self, path: str):
         return pq.read_pandas(path, columns=[]).num_rows
