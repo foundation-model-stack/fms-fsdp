@@ -25,6 +25,7 @@ class train_config:
     eol_token: Optional[int] = None
     strip_tokens: str = ""
     logical_shards: int = 1024
+    num_workers: int = 1
 
     # fsdp policies
     sharding_strategy: str = "hsdp"
