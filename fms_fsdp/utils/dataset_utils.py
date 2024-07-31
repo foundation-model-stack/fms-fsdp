@@ -870,9 +870,7 @@ class StreamingDocDataset(_StatefulDataset):
                 # Count file does not exist, touch every owned file for length
                 unique_shardfiles = set(shard for shard, frag in shardfrags)
                 doc_counts = {
-                    shard: pa.ipc.open_file(
-                        pa.memory_map(os.path.join(datapath, shard))
-                    ).num_record_batches
+                    shard: self.filehandler.length(os.path.join(datapath, shard))
                     for shard in unique_shardfiles
                 }
 
