@@ -29,10 +29,6 @@ def batch_losses_from_logits(logits, labels):
     shift_logits = logits
     shift_labels = labels
 
-    print(f'shape of logits: {shift_logits.shape}')
-    print(f'shape of labels: {shift_labels.shape}')
-
-
     num_active = (shift_labels != ignore_index).sum(dim=1)
     # Flatten the tokens
     loss_fct = torch.nn.CrossEntropyLoss(reduction='none')  # reduction='none'
@@ -45,8 +41,6 @@ def batch_losses_from_logits(logits, labels):
     loss = loss_fct(shift_logits, shift_labels)
     loss = loss.view(batch_size, -1).sum(dim=1) / num_active
 
-    print(f'loss shape: {loss.shape}')
-    print(f'num_active: {num_active}')
     # pdb.set_trace()
     return loss, num_active
 
@@ -144,10 +138,16 @@ def train(
 
         ### todo: our logic goes here ###
         # just sanity check
-        assert hasattr(output, "logits"), "outpust must have 'logits' attribute"
+        assert hasattr(output, "logits"), "output must have 'logits' attribute"
         assert hasattr(inputs, "labels"), "input must have 'labels' attribute"
 
-        print(f'++++++++++++++++++++ logs step: {batch_idx} ++++++++++++++++')
+        if rank == 0:
+            print(f'++++++++++++++++++++ logs step: {batch_idx} ++++++++++++++++')
+            print(f'labels: {input["labels"]}')
+            print(f'inputs: {input["input_ids"]}')
+            print(f'labels shape: {input["labels"].shape}')
+            print(f'inputs shape: {input["input_ids"].shape}')
+            print(f'logits shape: {output["logits"].shape}')
         device_losses, len_norms = batch_losses_from_logits(output['logits'], input['labels'])
         # len_norms = len_norms / len_norms.sum()
 
@@ -183,10 +183,12 @@ def train(
 
         # reweight losses and scale up to obtain same scaling as sum of all losses
         loss = torch.sum(device_weights * device_losses) * dist.get_world_size() * len(device_weights)
-        print(f'device weights: {device_weights}')
-        print(f'device losses: {device_losses}')
-        print(f'world size: {dist.get_world_size()}')
-        print(f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        if rank == 0:
+            print(f'device weights: {device_weights}')
+            print(f'device losses: {device_losses}')
+            print(f'len norms: {len_norms}')
+            print(f'world size: {dist.get_world_size()} and {int(os.environ["WORLD_SIZE"])}')
+            print(f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
         ### end of our logic ####
 
         loss.backward()
