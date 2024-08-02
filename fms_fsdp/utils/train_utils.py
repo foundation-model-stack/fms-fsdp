@@ -18,6 +18,51 @@ from torch.distributed.fsdp import ShardingStrategy
 from fms_fsdp.policies import *
 
 
+def batch_losses_from_logits(logits, labels):
+    ignore_index = -100
+
+    # uncomment if shift so that tokens < n predict n
+    # shift_logits = logits[..., :-1, :].contiguous()
+    # shift_labels = labels[..., 1:].contiguous()
+
+    # uncomment if labels are already shifted
+    shift_logits = logits
+    shift_labels = labels
+
+
+    num_active = (shift_labels != ignore_index).sum(dim=1)
+    # Flatten the tokens
+    loss_fct = torch.nn.CrossEntropyLoss(reduction='none')  # reduction='none'
+
+    batch_size, seq_length, vocab_size = shift_logits.shape
+    shift_logits = shift_logits.view(-1, vocab_size)
+    shift_labels = shift_labels.view(-1)
+    # Enable model parallelism
+    shift_labels = shift_labels.to(shift_logits.device)
+    loss = loss_fct(shift_logits, shift_labels)
+    loss = loss.view(batch_size, -1).sum(dim=1) / num_active
+
+    # pdb.set_trace()
+    return loss, num_active
+
+def g_func(losses, l):
+    return torch.exp(losses/l)
+
+def h_func(losses, delta=1., l_min=0.75, l_max=1.8):
+    return 2. * delta * losses / max(l_max - l_min, 1e-6) - delta * (l_max + l_min) / max(l_max - l_min, 1e-6)
+
+def f_func_mid(losses, delta=1.):
+    return 1 - losses**2 / delta**2
+
+def f_func_upper(losses, delta=1.):
+    return torch.minimum(losses + delta, delta * torch.ones_like(losses))
+
+def f_func_extremes(losses, delta=1.):
+    return torch.abs(losses)
+
+F_FUNC_DIC = {"mid": f_func_mid, "upper": f_func_upper, "extremes": f_func_extremes}
+f_func = F_FUNC_DIC["upper"]
+
 def train(
     cfg,
     model,
@@ -81,15 +126,58 @@ def train(
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break
+
         input = input.to(local_rank)
         label = label.to(local_rank)
 
         # right here
         optimizer.zero_grad()
         output = model(input)
-        output = output.logits if hasattr(output, "logits") else output
-        ce_loss = torch.nn.CrossEntropyLoss()
-        loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+        # output = output.logits if hasattr(output, "logits") else output
+        # ce_loss = torch.nn.CrossEntropyLoss()
+        # loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+
+        ### todo: our logic goes here ###
+        # just sanity check
+        assert hasattr(output, "logits"), "outpust must have 'logits' attribute"
+        assert hasattr(inputs, "labels"), "inputs must have 'labels' attribute"
+
+        device_losses, len_norms = batch_losses_from_logits(output['logits'], input['labels'])
+        # len_norms = len_norms / len_norms.sum()
+
+        # Initialize placeholder to hold the losses from all GPUs
+        # gathered_losses = [torch.zeros_like(device_losses) for _ in range(dist.get_world_size())]
+        gathered_losses = torch.zeros(
+            dist.get_world_size(),
+            len(device_losses),
+            device=device_losses.device,
+            dtype=device_losses.dtype
+        )
+        # All-gather into tensor across all GPUs
+        dist.all_gather_into_tensor(gathered_losses, device_losses.detach())
+
+        if batch_idx < 2000:
+            kl_reg = 10.0
+        else:
+            kl_reg = 1.0
+        with torch.no_grad():
+            gathered_losses = gathered_losses.detach()
+            # sanity check to make sure that the dist.all_gather output is ordered by device number
+            assert gathered_losses[local_rank, :] == device_losses.data
+
+            lmin = gathered_losses.min().item()
+            lmax = gathered_losses.max().item()
+
+            h_losses = h_func(gathered_losses.view(-1), delta=1., l_min=lmin, l_max=lmax)
+            f_losses = f_func(h_losses, delta=1.)
+            g_losses = g_func(f_losses - f_losses.max().item(), l=kl_reg)
+            weights = g_losses / g_losses.sum()
+
+            device_weights = weights.view(dist.get_world_size(), -1)[local_rank, :]
+
+        # reweight losses and scale up to obtain same scaling as sum of all losses
+        loss = torch.sum(device_weights * device_losses) * dist.get_world_size() * len(device_weights)
+        ### end of our logic ####
 
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
