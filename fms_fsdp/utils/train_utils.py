@@ -162,10 +162,10 @@ def train(
         # All-gather into tensor across all GPUs
         dist.all_gather_into_tensor(gathered_losses, device_losses.detach())
 
-        if batch_idx < 2000:
-            kl_reg = 10.0
+        if batch_idx < cfg.kl_regularizer_warmup_steps:
+            kl_regularizer = 100.0
         else:
-            kl_reg = 1.0
+            kl_regularizer = cfg.kl_regularizer
         with torch.no_grad():
             gathered_losses = gathered_losses.detach()
             # sanity check to make sure that the dist.all_gather output is ordered by device number
@@ -176,7 +176,7 @@ def train(
 
             h_losses = h_func(gathered_losses.view(-1), delta=1., l_min=lmin, l_max=lmax)
             f_losses = f_func(h_losses, delta=1.)
-            g_losses = g_func(f_losses - f_losses.max().item(), l=kl_reg)
+            g_losses = g_func(f_losses - f_losses.max().item(), l=kl_regularizer)
             weights = g_losses / g_losses.sum()
 
             device_weights = weights.view(dist.get_world_size(), -1)[local_rank, :]
