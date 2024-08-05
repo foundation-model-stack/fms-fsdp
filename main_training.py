@@ -134,14 +134,17 @@ def main(**kwargs):
             g["initial_lr"] = cfg.learning_rate
 
     # LR schedule
-    warmup_interval = min(2000, cfg.num_steps // 20)
-    schedule = lambda x: min(
-        1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-        0.1
-        + 0.5
-        * (1 - 0.1)
-        * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-    )
+    if cfg.training_stage == "annealing":
+        schedule = lambda x: 1 - x / cfg.num_steps
+    else:
+        warmup_interval = min(2000, cfg.num_steps // 20)
+        schedule = lambda x: min(
+            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+            0.1
+            + 0.5
+            * (1 - 0.1)
+            * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+        )
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler
