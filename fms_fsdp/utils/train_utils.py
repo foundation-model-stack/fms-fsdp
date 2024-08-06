@@ -87,10 +87,8 @@ def train(
         optimizer.zero_grad()
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
-        print(output.dtype)
-        print(label.dtype)
         ce_loss = torch.nn.MSELoss()
-        loss = ce_loss(output, label)
+        loss = ce_loss(output, label.bfloat16())
 
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
