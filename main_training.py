@@ -70,6 +70,8 @@ def main(**kwargs):
 
     # get fms model
     model = TinyModel()
+    if rank == 0:
+        print(model)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -96,7 +98,8 @@ def main(**kwargs):
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
     )
-    print(model)
+    if rank == 0:
+        print(model)
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
