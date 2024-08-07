@@ -58,7 +58,7 @@ def get_data_loader(cfg, rank, world_size):
         Number of distributed workers. Used for handling dataset sharding logic.
     """
 
-    datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
+    #datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
 
     def causal_lm(data_seq, prompt_len=0):
         """
@@ -81,8 +81,10 @@ def get_data_loader(cfg, rank, world_size):
         cfg.file_type in _handler_map
     ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
     if cfg.file_type == "hf_parquet":
+        print("Debug cfg.file_type == hf_parquet",cfg.col_name)
         filehandler = ParquetHandler(cfg.tokenizer_path, cfg.col_name)
     else:
+        print("Debug cfg.file_type",cfg.file_type,cfg.col_name)
         filehandler = _handler_map[cfg.file_type](cfg.col_name)
     # Base reader layer
     data = StreamingDocDataset(
@@ -103,14 +105,14 @@ def get_data_loader(cfg, rank, world_size):
         n_logical_shards=cfg.logical_shards,
     )
     # Add multi-dataset handling
-    data = SamplingDataset(
-        cfg.data_path,
-        data,
-        cfg.eos_token,
-        datasets=datasets,
-        weights=weights,
-        verbose=(rank == 0),
-    )
+    #data = SamplingDataset(
+    #    cfg.data_path,
+    #    data,
+    #    cfg.eos_token,
+    #    datasets=datasets,
+    #    weights=weights,
+    #    verbose=(rank == 0),
+    #)
     # Wrap above dataset in packing logic to form constant-length lines.
     data = BufferDataset(
         data,

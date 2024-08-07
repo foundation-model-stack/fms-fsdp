@@ -348,15 +348,65 @@ class ParquetHandler(_ShardFileHandler):
     def __init__(self, tokenizer_path: str, col_name: str = "text"):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.col_name = col_name
+        #self.chunk_size = 4096*1024
 
     def open(self, path: str):
-        return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
+        #print("Inside open",path)
+        return pq.read_pandas(path, columns=[self.col_name], use_threads=True, memory_map=True)[self.col_name]
 
     def length(self, path: str):
-        return pq.read_pandas(path, columns=[]).num_rows
+        #return pq.read_pandas(path, columns=[]).num_rows
+        table = pq.read_table(path, columns=[])
+        return table.num_rows
+
+    #def split_text(self, text: str, chunk_size: int) -> str:
+    #    """
+    #    Split text into chunks for languages with spaces between words.
+    #    For input/output, please refer to the split_text() function
+    #    """
+    #    index = 0
+    #    while index < len(text):
+    #        # last chunk:
+    #        if len(text) - index < chunk_size:
+    #            yield text[index:]
+    #            break
+    #
+    #        if text[index + chunk_size - 1] != " ":
+    #            """
+    #            if the last character of the chunk is not a space,
+    #            search index of the last space in the chunk:
+    #            """
+    #            last_space_index = text.rfind(" ", index, index + chunk_size)
+    #
+    #            if last_space_index != -1:  # s[last_space_index] = ' '
+    #                # If found, return the chunk up to and include such space:
+    #                yield text[index : last_space_index + 1]
+    #                index = last_space_index + 1
+    #            else:
+    #                # If not, force cutting up to chunk_size:
+    #                yield text[index : index + chunk_size]
+    #                index += chunk_size
+    #        else:
+    #            yield text[index : index + chunk_size]
+    #            index += chunk_size
 
     def get(self, reader, index: int, drop_tokens: Set):
         doc = self.tokenizer(str(reader[index]))["input_ids"]
+        #doc_content=str(reader[index].as_py())
+        #doc_length = len(doc_content)
+        #if self.chunk_size > 0 and doc_length > self.chunk_size:
+        #    print(len(doc_content),flush=True)
+        #    token_line = []
+        #    doc_len_so_far = 0
+        #    for chunk_idx, chunk in enumerate(self.split_text(doc_content, self.chunk_size)):
+        #        #print("tokenizing",chunk_idx,chunk)
+        #        #token_line.extend(self.tokenizer(chunk)["input_ids"])
+        #        token_line.extend(self.tokenizer.encode(chunk))
+        #        doc_len_so_far += len(chunk)
+        #else:
+        #    #print("tokenizing",doc_content)
+        #    token_line = self.tokenizer.encode(doc_content)
+        #doc = token_line
         if doc[0] in drop_tokens:
             doc = doc[1:]
         if doc[-1] in drop_tokens:
@@ -395,6 +445,7 @@ class PreprocessDataset(_WrapperDataset):
         dataset = iter(self.dataset)
         while True:
             out = next(dataset)
+            #print("Yielding in PreprocessDataset")
             yield self.aug_fn(out)
 
 
@@ -449,6 +500,7 @@ class CheckpointDataset(_WrapperDataset):
         self.setup()
         dataset = iter(self.dataset)
         while True:
+            #print("Yielding in CheckpointDataset")
             yield next(dataset)
             self.ministep += 1
             if self.ministep == self.spb:
@@ -580,6 +632,7 @@ class PreloadBufferDataset(_WrapperDataset):
                 self.buffer_size -= 1
             else:
                 self.buffer[i] = next(dataset)
+            #print("Yielding in PreloadBufferDataset")
             yield out
 
     def _pad_buffer(self):
@@ -831,9 +884,10 @@ class StreamingDocDataset(_StatefulDataset):
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
             shards = [
-                shard
-                for shard in os.listdir(datapath)
-                if os.path.isfile(os.path.join(datapath, shard))
+                os.path.join(root, name)[len(datapath) + 1 :]
+                for root, dirs, files in os.walk(datapath, topdown=False)
+                for name in files
+                if ("arrow" in name or "parquet" in name) and os.path.isfile(os.path.join(root, name))
             ]
             shards.sort()  # Ensure consistent sharding across machines
             start_frag = (self.rank * self.worldsize * len(shards)) // self.worldsize
@@ -1017,6 +1071,7 @@ class StreamingDocDataset(_StatefulDataset):
                                 self.percent_seen = (
                                     self.docs_seen * 100 / (self._len + 1e-9)
                                 )
+                            #print("Yielding in StreamingDocDataset1")
                             yield self._construct_chunk(j, doc, n_chunks)
 
                 # Advance RNG state
@@ -1035,6 +1090,7 @@ class StreamingDocDataset(_StatefulDataset):
                 n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):
                     self.chunk_index = j
+                    #print("Yielding in StreamingDocDataset2")
                     yield self._construct_chunk(j, doc, n_chunks)
 
     def load_state_dict(self, state_dicts, sharded_input=False):
