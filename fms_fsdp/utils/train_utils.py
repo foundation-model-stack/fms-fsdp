@@ -22,12 +22,12 @@ def batch_losses_from_logits(logits, labels):
     ignore_index = -100
 
     # uncomment if shift so that tokens < n predict n
-    # shift_logits = logits[..., :-1, :].contiguous()
-    # shift_labels = labels[..., 1:].contiguous()
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
 
     # uncomment if labels are already shifted
-    shift_logits = logits
-    shift_labels = labels
+    #shift_logits = logits
+    #shift_labels = labels
 
     num_active = (shift_labels != ignore_index).sum(dim=1)
     # Flatten the tokens
@@ -35,7 +35,7 @@ def batch_losses_from_logits(logits, labels):
 
     batch_size, seq_length, vocab_size = shift_logits.shape
     shift_logits = shift_logits.view(-1, vocab_size)
-    shift_labels = shift_labels.view(-1)
+    shift_labels = shift_labels.view(-1).long()
     # Enable model parallelism
     shift_labels = shift_labels.to(shift_logits.device)
     loss = loss_fct(shift_logits, shift_labels)
@@ -138,18 +138,15 @@ def train(
 
         ### todo: our logic goes here ###
         # just sanity check
-        assert hasattr(output, "logits"), "output must have 'logits' attribute"
-        assert hasattr(inputs, "labels"), "input must have 'labels' attribute"
+        # assert hasattr(output, "logits"), "output must have 'logits' attribute"
+        # assert hasattr(inputs, "labels"), "input must have 'labels' attribute"
 
         if rank == 0:
             print(f'++++++++++++++++++++ logs step: {batch_idx} ++++++++++++++++')
-            print(f'labels: {input["labels"]}')
-            print(f'inputs: {input["input_ids"]}')
-            print(f'labels shape: {input["labels"].shape}')
-            print(f'inputs shape: {input["input_ids"].shape}')
-            print(f'logits shape: {output["logits"].shape}')
-        device_losses, len_norms = batch_losses_from_logits(output['logits'], input['labels'])
-        # len_norms = len_norms / len_norms.sum()
+            print(f'inputs: {input}')
+            print(f'inputs shape: {input.shape}')
+            print(f'logits shape: {output.shape}')
+        device_losses, len_norms = batch_losses_from_logits(output, input)
 
         # Initialize placeholder to hold the losses from all GPUs
         # gathered_losses = [torch.zeros_like(device_losses) for _ in range(dist.get_world_size())]
@@ -168,8 +165,6 @@ def train(
             kl_regularizer = cfg.kl_regularizer
         with torch.no_grad():
             gathered_losses = gathered_losses.detach()
-            # sanity check to make sure that the dist.all_gather output is ordered by device number
-            assert gathered_losses[local_rank, :] == device_losses.data
 
             lmin = gathered_losses.min().item()
             lmax = gathered_losses.max().item()
@@ -181,14 +176,17 @@ def train(
 
             device_weights = weights.view(dist.get_world_size(), -1)[local_rank, :]
 
+            if rank == 0:
+                print("gathered_losses.shape",gathered_losses.shape)
+                print("gathered_losses",gathered_losses)
+                print("device_losses.data",device_losses.data)
+                print(f'device weights: {device_weights}')
+                print(f'all weights: {weights.view(dist.get_world_size(), -1)}')
+                print(f'len norms: {len_norms}')
+                print(f'world size: {dist.get_world_size()} and {int(os.environ["WORLD_SIZE"])}')
+
         # reweight losses and scale up to obtain same scaling as sum of all losses
-        loss = torch.sum(device_weights * device_losses) * dist.get_world_size() * len(device_weights)
-        if rank == 0:
-            print(f'device weights: {device_weights}')
-            print(f'device losses: {device_losses}')
-            print(f'len norms: {len_norms}')
-            print(f'world size: {dist.get_world_size()} and {int(os.environ["WORLD_SIZE"])}')
-            print(f'+++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+        loss = torch.sum(device_weights * device_losses) * dist.get_world_size() # * len(device_weights)
         ### end of our logic ####
 
         loss.backward()
