@@ -70,7 +70,7 @@ def main(**kwargs):
     # get fms model
     model = torch.nn.Sequential(
         torch.nn.Linear(4096, 4096),
-        torch.nn.LayerNorm(10),
+        torch.nn.LayerNorm(4096),
         torch.nn.ReLU(),
     )
     if rank == 0:
