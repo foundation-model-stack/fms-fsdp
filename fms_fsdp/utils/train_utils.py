@@ -141,7 +141,8 @@ def train(
         # assert hasattr(output, "logits"), "output must have 'logits' attribute"
         # assert hasattr(inputs, "labels"), "input must have 'labels' attribute"
 
-        if rank == 0:
+        DEBUG=False
+        if rank == 0 and DEBUG:
             print(f'++++++++++++++++++++ logs step: {batch_idx} ++++++++++++++++')
             print(f'inputs: {input}')
             print(f'inputs shape: {input.shape}')
@@ -176,7 +177,7 @@ def train(
 
             device_weights = weights.view(dist.get_world_size(), -1)[local_rank, :]
 
-            if rank == 0:
+            if rank == 0 and DEBUG:
                 print("gathered_losses.shape",gathered_losses.shape)
                 print("gathered_losses",gathered_losses)
                 print("device_losses.data",device_losses.data)
