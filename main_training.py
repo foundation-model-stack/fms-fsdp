@@ -34,7 +34,6 @@ class TinyModel(torch.nn.Module):
         x = self.linear2(x)
         return x
 
-
 def main(**kwargs):
     # get configs
     cfg = config.train_config()
@@ -69,7 +68,11 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, block)
 
     # get fms model
-    model = TinyModel()
+    model = torch.nn.Sequential(
+        torch.nn.Linear(4096, 4096),
+        torch.nn.LayerNorm(10),
+        torch.nn.ReLU(),
+    )
     if rank == 0:
         print(model)
 
