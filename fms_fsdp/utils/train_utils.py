@@ -60,7 +60,6 @@ def f_func_extremes(losses, delta=1.):
     return torch.abs(losses)
 
 F_FUNC_DIC = {"mid": f_func_mid, "upper": f_func_upper, "extremes": f_func_extremes}
-f_func = F_FUNC_DIC["upper"]
 
 def train(
     cfg,
@@ -122,6 +121,8 @@ def train(
     start = time.time()
     loop_start = time.time()
     train_loss = -1
+    f_func = F_FUNC_DIC[cfg.reweigthing_strategy]
+
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break
