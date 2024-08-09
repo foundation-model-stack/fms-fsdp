@@ -4,7 +4,6 @@ import os
 import fire
 import torch
 import torch.optim as optim
-from fms.models.llama import LLaMA, LLaMABlock
 from torch import distributed as dist
 from torch.distributed._composable.fsdp import fully_shard
 from torch.optim.lr_scheduler import LambdaLR
@@ -20,6 +19,32 @@ from fms_fsdp.utils.train_utils import (
     setup_environ_flags,
     train,
 )
+
+
+class Block(torch.nn.Module):
+    def __init__(self):
+        super(Block, self).__init__()
+
+        self.linear1 = torch.nn.Linear(4096, 14336, bias=False)
+        self.linear2 = torch.nn.Linear(14336, 4096, bias=False)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.linear2(x)
+        return x
+
+
+class TinyModel(torch.nn.Module):
+    def __init__(self):
+        super(TinyModel, self).__init__()
+
+        self.block1 = Block()
+        self.block2 = Block()
+
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.block1(x)
+        return x
 
 
 def main(**kwargs):
@@ -46,7 +71,7 @@ def main(**kwargs):
     setup_environ_flags()
 
     # get policy
-    block = LLaMABlock
+    block = Block
     (
         mp_policy,
         mesh,
@@ -54,13 +79,9 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, world_size, block)
 
     # get fms model
-    llama_config = get_model_config(cfg.model_variant)
-    if cfg.low_cpu_fsdp:
-        with torch.device("meta"):
-            model = LLaMA(llama_config)
-    else:
-        model = LLaMA(llama_config)
-        model.reset_parameters()
+    model = TinyModel()
+    if rank == 0:
+        print(model)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -88,11 +109,8 @@ def main(**kwargs):
         model.to_empty(device="cuda")
         model.reset_parameters()
 
-    # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
-    model.rot_emb.compute_freqs_cis(
-        torch.device("cuda", torch.cuda.current_device()),
-        model.config.max_expected_seq_len,
-    )
+    if rank == 0:
+        print(model)
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
