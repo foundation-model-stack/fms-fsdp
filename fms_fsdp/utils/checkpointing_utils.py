@@ -179,9 +179,12 @@ class Checkpointer:
         Returns model, optimizer, dataloader, current step, and current tokens seen.
         """
         is_resuming = False
+        print(self.ckp_path)
         if self._validate_ckp_path(self.ckp_path) is not None:
+            print("yyyyyyyy")
             path = self.ckp_path
             is_resuming = True
+        print(path)
         load_path = self._validate_ckp_path(path)
         if load_path is None:
             self.report(
