@@ -24,6 +24,7 @@ def get_latest(targdir, qualifier=lambda x: True):
     """Fetch the latest file or folder written to target directory, subject to name passing the qualifier fn.
     If directory is empty or nonexistent or no items qualify, return None."""
     if os.path.exists(targdir) and len(os.listdir(targdir)) > 0:
+        print(targdir)
         latest = max(
             [
                 os.path.join(targdir, x)
