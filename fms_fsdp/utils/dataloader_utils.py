@@ -3,40 +3,30 @@ from typing import List, Tuple, Union
 import torch
 
 from fms_fsdp.utils.dataset_utils import (
-    Buffer_Dataset,
-    Preload_Buffer_Dataset,
-    Preprocess_Dataset,
-    Sampling_Dataset,
-    Scalable_Shard_Dataset,
+    ArrowHandler,
+    BufferDataset,
+    CheckpointDataset,
+    ParquetHandler,
+    PreloadBufferDataset,
+    PreprocessDataset,
+    SamplingDataset,
+    ScalableShardDataset,
+    StreamingDocDataset,
 )
 
 
-def parse_data_args(
-    datas: Union[str, List[str], Tuple[str]],
-    weights: Union[int, float, List[Union[int, float]], Tuple[Union[int, float]]],
-):
-    # Convert csv inputs into corresponding lists of values
-    def splitstrip(x):
-        if isinstance(x, str):
-            return [item.strip() for item in x.split(",")]
-        elif isinstance(x, (list, tuple)):
-            return list(x)
-        elif isinstance(x, (int, float)):
-            return [x]
-        else:
-            raise ValueError(f"arg input {x} cannot be parsed.")
-
-    datas = splitstrip(datas)
-    weights = [float(x) for x in splitstrip(weights)]
-    return datas, weights
+_handler_map = {
+    "arrow": ArrowHandler,
+    "hf_parquet": ParquetHandler,
+}
 
 
-def causal_lm(data_seq: torch.Tensor, prompt_len: int = 1):
+def causal_lm(data_seq, prompt_len=1):
     """
     Perform causal language modeling by right-shifting the input sequence.
     Sets first prompt_len tokens to be ignored by the loss.
-    Expects tensor inputs.
     """
+    data_seq = torch.IntTensor(data_seq)
     t = data_seq.clone()[1:]
     data_seq = data_seq[:-1]
     t[:prompt_len] = -100
@@ -69,7 +59,8 @@ def get_dummy_loader(cfg, rank, world_size):
 
 def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     """
-    Pytorch dataloader for stateful, distributed, and rescalable training
+    Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training.
+    Assumes underlying data is sequences of integer values.
     ...
     Args
     ----
@@ -88,24 +79,50 @@ def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
 
     # Base streaming dataset. Returns doc chunks in sequence.
     # Implements dataset sampling and rescalability.
-    data = Sampling_Dataset(
+    droplist = [
+        int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip()) > 0
+    ]
+    droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
+    assert (
+        cfg.file_type in _handler_map
+    ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
+    if cfg.file_type == "hf_parquet":
+        filehandler = ParquetHandler(cfg.tokenizer_path, cfg.col_name)
+    else:
+        filehandler = _handler_map[cfg.file_type](cfg.col_name)
+    # Base reader layer
+    data = StreamingDocDataset(
         cfg.data_path,
-        Scalable_Shard_Dataset,
         rank,
         world_size,
-        cfg.sep_token,
+        filehandler,
+        cfg.eos_token,
+        bos_token=cfg.bos_token,
+        strip_tokens=set(droplist),
         min_length=3,
-        datasets=datasets,
-        weights=weights,
         seed=cfg.seed,
-        verbose=(rank == 0),
+    )
+    # Add rescaling/resharding
+    data = ScalableShardDataset(
+        data,
+        cfg.eos_token,
         n_logical_shards=cfg.logical_shards,
     )
+    # Add multi-dataset handling
+    data = SamplingDataset(
+        cfg.data_path,
+        data,
+        cfg.eos_token,
+        datasets=datasets,
+        weights=weights,
+        verbose=(rank == 0),
+    )
     # Wrap above dataset in packing logic to form constant-length lines.
-    data = Buffer_Dataset(
+    data = BufferDataset(
         data,
         cfg.seq_length if causal_lm not in postprocess else cfg.seq_length + 1,
-        drop_final_token=cfg.sep_token,
+        bos_token=cfg.bol_token,
+        eos_token=cfg.eol_token,
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
@@ -115,4 +132,31 @@ def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     for p in postprocess:
         data = Preprocess_Dataset(data, p)
 
-    return torch.utils.data.DataLoader(data, num_workers=0, batch_size=cfg.batch_size)
+    # Enable auto-saving
+    data = CheckpointDataset(
+        data,
+        cfg.ckpt_load_path if cfg.resuming_dataset else cfg.ckpt_save_path,
+        cfg.checkpoint_interval,
+        cfg.batch_size,
+        cfg.ckpt_save_path,
+    )
+    return torch.utils.data.DataLoader(
+        data, num_workers=cfg.num_workers, batch_size=cfg.batch_size
+    )
+
+
+def parse_data_args(datas, weights):
+    # Convert csv inputs into corresponding lists of values
+    def splitstrip(x):
+        if isinstance(x, str):
+            return [item.strip() for item in x.split(",")]
+        elif isinstance(x, (list, tuple)):
+            return list(x)
+        elif isinstance(x, (int, float, complex)):
+            return [x]
+        else:
+            raise ValueError(f"arg input {x} cannot be parsed.")
+
+    datas = splitstrip(datas)
+    weights = [float(x) for x in splitstrip(weights)]
+    return datas, weights

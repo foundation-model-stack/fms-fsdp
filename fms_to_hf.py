@@ -8,9 +8,12 @@ from transformers import LlamaConfig, LlamaForCausalLM
 from fms_fsdp.utils.config_utils import get_model_config
 
 
-def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
+def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
     fms_hf_model = to_hf_api(model)
     hf_config = fms_hf_model.config
+    if "llama3" in model_variant:
+        hf_config.bos_token_id = 128000
+        hf_config.eos_token_id = 128001
     oss_hf_model = LlamaForCausalLM(
         LlamaConfig(
             vocab_size=hf_config.vocab_size,
@@ -54,15 +57,42 @@ def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
             fms_hf_layer = fms_hf_model.decoder.model.layers[i]
 
             # self attn
-            oss_hf_layer.self_attn.q_proj.weight.copy_(fms_hf_layer.attn.query.weight)
-            oss_hf_layer.self_attn.k_proj.weight.copy_(fms_hf_layer.attn.key.weight)
-            oss_hf_layer.self_attn.v_proj.weight.copy_(fms_hf_layer.attn.value.weight)
+            if is_old_fms:
+                oss_hf_layer.self_attn.q_proj.weight.copy_(
+                    fms_hf_layer.attn.query.weight
+                )
+                oss_hf_layer.self_attn.k_proj.weight.copy_(fms_hf_layer.attn.key.weight)
+                oss_hf_layer.self_attn.v_proj.weight.copy_(
+                    fms_hf_layer.attn.value.weight
+                )
+            else:
+                q, k, v = torch.split(
+                    fms_hf_layer.attn.in_proj.qkv_fused.weight,
+                    fms_hf_layer.attn.in_proj.splits,
+                    dim=0,
+                )
+                oss_hf_layer.self_attn.q_proj.weight.copy_(q)
+                oss_hf_layer.self_attn.k_proj.weight.copy_(k)
+                oss_hf_layer.self_attn.v_proj.weight.copy_(v)
             oss_hf_layer.self_attn.o_proj.weight.copy_(fms_hf_layer.attn.dense.weight)
             oss_hf_layer.self_attn.rotary_emb.inv_freqs = freqs
 
             # mlp
-            oss_hf_layer.mlp.gate_proj.weight.copy_(fms_hf_layer.ff_sub_layer.wg.weight)
-            oss_hf_layer.mlp.up_proj.weight.copy_(fms_hf_layer.ff_sub_layer.w1.weight)
+            if is_old_fms:
+                oss_hf_layer.mlp.gate_proj.weight.copy_(
+                    fms_hf_layer.ff_sub_layer.wg.weight
+                )
+                oss_hf_layer.mlp.up_proj.weight.copy_(
+                    fms_hf_layer.ff_sub_layer.w1.weight
+                )
+            else:
+                wg1_fused = fms_hf_layer.ff_sub_layer.wg1_fused.weight
+                wg_splits = [wg1_fused.size(0) // 2, wg1_fused.size(0) // 2]
+                wg, w1 = torch.split(
+                    fms_hf_layer.ff_sub_layer.wg1_fused.weight, wg_splits, dim=0
+                )
+                oss_hf_layer.mlp.gate_proj.weight.copy_(wg)
+                oss_hf_layer.mlp.up_proj.weight.copy_(w1)
             oss_hf_layer.mlp.down_proj.weight.copy_(fms_hf_layer.ff_sub_layer.w2.weight)
 
             # layer norm
@@ -82,7 +112,12 @@ def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
 
             k = oss_hf_layer.self_attn.k_proj.weight.data
             k = (
-                k.view(hf_config.nheads, -1, 2, k.size(1))
+                k.view(
+                    hf_config.nheads if hf_config.kvheads == 0 else hf_config.kvheads,
+                    -1,
+                    2,
+                    k.size(1),
+                )
                 .transpose(1, 2)
                 .reshape(*k.size())
             )
@@ -95,7 +130,9 @@ def convert_to_hf(model: LLaMA) -> LlamaForCausalLM:
     return oss_hf_model
 
 
-def main(model_variant, compiled, load_path, save_path, tokenizer_name_or_path):
+def main(
+    model_variant, compiled, is_old_fms, load_path, save_path, tokenizer_name_or_path
+):
     print("Initializing model...")
     llama_config = get_model_config(model_variant)
     with torch.device("meta"):
@@ -118,7 +155,7 @@ def main(model_variant, compiled, load_path, save_path, tokenizer_name_or_path):
         model.load_state_dict(state_dict["model_state"]["_orig_mod"])
 
     print("Converting to HF model..")
-    hf_model = convert_to_hf(model)
+    hf_model = convert_to_hf(model, model_variant, is_old_fms)
     hf_model.save_pretrained(save_path)
 
     print("Copying tokenizer...")

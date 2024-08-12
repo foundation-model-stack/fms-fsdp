@@ -20,6 +20,7 @@ def generate_sequential_multidata():
 
     os.mkdir(os.path.join(tmpdir.name, "dataset_1"))
     os.mkdir(os.path.join(tmpdir.name, "dataset_2"))
+    os.mkdir(os.path.join(tmpdir.name, "dataset_2", "subfolder"))
     with pa.ipc.new_file(
         os.path.join(tmpdir.name, "dataset_1/fullshard.arrow"), schema
     ) as writer:
@@ -35,7 +36,7 @@ def generate_sequential_multidata():
             writer.write(pa.record_batch([out], schema=schema))
 
     with pa.ipc.new_file(
-        os.path.join(tmpdir.name, "dataset_2/quartershard_2.arrow"), schema
+        os.path.join(tmpdir.name, "dataset_2/subfolder/quartershard_2.arrow"), schema
     ) as writer:
         for i in range(50):
             out = list(range(2500 + i * 50, 2500 + i * 50 + 50))
@@ -47,7 +48,7 @@ def generate_sequential_multidata():
     f.write("dataset/filename,documents,tokens\n")
     f.write("/dataset_1/fullshard.arrow,100,10000\n")
     f.write("/dataset_2/quartershard_1.arrow,50,2500\n")
-    f.write("/dataset_2/quartershard_2.arrow,50,2500\n")
+    f.write("/dataset_2/subfolder/quartershard_2.arrow,50,2500\n")
     f.close()
 
     return tmpdir
@@ -62,19 +63,16 @@ tmpdir = generate_sequential_multidata()
 # For X_check see corresponding test_X
 
 
-def count_check(d, dataset, ntok, ndoc, alldoc, allpercent):
+def count_check(d, ntok, alldoc, allpercent):
     # Check that tokens tracked matches tokens seen, and docs tracked matches docs seen
     # d is a lambda for a fully-defined dataset (i.e. d() instantiates the dataset)
     assert (
-        d.dataset_tokens_seen[dataset] == ntok
-    ), f"Tokens tracked {d.dataset_tokens_seen[dataset]} failed to match target {ntok}"
-    # for k in d.docs_seen.keys():
-    #     if k[0] == dataset:
-    #         assert d.docs_seen[k] == ndoc, f"Document {k} appeared {d.docs_seen[k]} times rather than {ndoc}"
-    # assert (
-    #     d.dataset_docs_seen[dataset] == alldoc
-    # ), f"Total document count {d.dataset_docs_seen[dataset]} does not match target {alldoc}"
-    coverage = d.dataset_percent_seen[dataset]
+        d.tokens_seen == ntok
+    ), f"Tokens tracked {d.tokens_seen} failed to match target {ntok}"
+    assert (
+        d.docs_seen == alldoc
+    ), f"Total document count {d.docs_seen} does not match target {alldoc}"
+    coverage = d.percent_seen
     assert (
         abs(coverage - allpercent) < 1e-4
     ), f"Percent coverage {coverage} is not within 1e-4 of {allpercent}"
@@ -85,7 +83,7 @@ def multi_reload_stress_check(d):
     # d is a lambda for a fully-defined dataset (i.e. d() instantiates the dataset)
 
     def reload_stress(datasets, datasets2, steps1, steps2):
-        # Perform the 5-step reload stress test (see test_reload_stress_all)
+        # Perform the 5-step reload stress test (see test_multi_reload_stress)
 
         loaders = [iter(d) for d in datasets]
 
@@ -134,7 +132,7 @@ def single_epoch_check(d, do_countcheck=False):
 
     if do_countcheck:
         # Check state flags tracking correctly
-        count_check(dataset, "dataset_1", 100 * 100, 1, 100, 100)
+        count_check(dataset, 100 * 100, 100, 100)
 
 
 def two_epoch_check(d, do_countcheck=False):
@@ -155,7 +153,7 @@ def two_epoch_check(d, do_countcheck=False):
 
     if do_countcheck:
         # Check state flags tracking correctly
-        count_check(dataset, "dataset_1", 100 * 100 * 2, 2, 200, 200)
+        count_check(dataset, 100 * 100 * 2, 200, 200)
 
 
 def chunk_check(d, do_countcheck=False):
@@ -182,7 +180,7 @@ def chunk_check(d, do_countcheck=False):
         ), f"Chunk starting with {i * 50} failed to appear in generated data"
 
     if do_countcheck:
-        count_check(dataset, "dataset_1", 100 * 100, 1, 100, 100)
+        count_check(dataset, 100 * 100, 100, 100)
 
 
 def two_loader_check(d, do_countcheck=False):
@@ -206,8 +204,8 @@ def two_loader_check(d, do_countcheck=False):
         ), f"Line starting with {i * 100} failed to appear in generated data"
 
     if do_countcheck:
-        count_check(dataset1, "dataset_1", 50 * 100, 1, 50, 100)
-        count_check(dataset2, "dataset_1", 50 * 100, 1, 50, 100)
+        count_check(dataset1, 50 * 100, 50, 100)
+        count_check(dataset2, 50 * 100, 50, 100)
 
 
 def multi_file_check(d, do_countcheck=False):
@@ -226,7 +224,7 @@ def multi_file_check(d, do_countcheck=False):
         ), f"Line starting with {i * 50} failed to appear in generated data"
 
     if do_countcheck:
-        count_check(dataset, "dataset_2", 100 * 50, 1, 100, 100)
+        count_check(dataset, 100 * 50, 100, 100)
 
 
 def chunk_weight_check(w1, w2, d, do_countcheck=False):
@@ -250,11 +248,6 @@ def chunk_weight_check(w1, w2, d, do_countcheck=False):
             assert (
                 check[i * 50] == w1
             ), f"Chunk starting with {i * 50} appeared {check[i*50]} times rather than {w1}"
-
-    # Check state flags tracking correctly
-    if do_countcheck:
-        count_check(dataset, "dataset_1", 100 * 100 * w1, w1, 100 * w1, 100)
-        count_check(dataset, "dataset_2", 100 * 50 * w2, w2, 100 * w2, 100)
 
 
 def reload_epoch_check(loader):
@@ -333,6 +326,7 @@ def reload_single_epoch_check(loader):
     ins = []
     for _ in range(150):
         out = next(loaders2[0])
+        assert out[0] not in ins, (ins, out[0])
         ins.append(out[0])
     for _ in range(150):
         out = next(loaders2[1])
@@ -343,35 +337,96 @@ def reload_single_epoch_check(loader):
     ), f"Full epoch output contains {len(ins)} values but only {len(set(ins))} unique"
 
 
+def single_doc_bos_eos_check(loader, do_bos):
+    # Single shard, single loader: load two chunks, verify that sizes match when BOS is on/off
+    expected_vals = (
+        [
+            [99, 3],
+            [100, 2],
+            [101, 1],
+            [102, 102],
+            [102, 102],
+        ]
+        if do_bos
+        else [
+            [99, 2],
+            [100, 1],
+            [101, 101],
+            [101, 101],
+            [101, 101],
+        ]
+    )
+    for i, c in enumerate([99, 100, 101, 102, 103]):
+        dataset = loader(
+            rank=0, worldsize=1, max_chunksize=c, bos_token=100 if do_bos else None
+        )
+        d = iter(dataset)
+        for _ in range(10):
+            c1 = next(d)
+            c2 = next(d)
+            assert (
+                len(c1) == expected_vals[i][0]
+            ), f"Expected size {expected_vals[i][0]} in first chunk, got {len(c1)}"
+            assert (
+                len(c2) == expected_vals[i][1]
+            ), f"Expected size {expected_vals[i][1]} in second chunk, got {len(c2)}"
+            if c == 99:
+                assert (
+                    c1[-1] == c2[0] - 1
+                ), f"Expected chunk 2 to follow chunk1, got {c1[-1]} and {c2[0]}"
+
+
+def single_epoch_loader_worker_check(d, n_workers=0):
+    # For dataset_1 partitioned over logical shards / workers / ranks,
+    # check that every doc appears once per epoch
+    loaders = [
+        torch.utils.data.DataLoader(x, num_workers=n_workers, batch_size=1) for x in d
+    ]
+    loaders = [iter(l) for l in loaders]
+    n_steps = 100 // len(loaders)
+    ins = []
+    for _ in range(n_steps):
+        for l in loaders:
+            out = next(l)
+            ins.append(out[0].item())
+
+    for i in range(100):
+        assert (
+            i * 100 in ins
+        ), f"Line starting with {i * 100} failed to appear in generated data: worldsize {len(loaders)}, n_workers {n_workers}"
+
+
 # BASE DATASET TESTS
 
 
 def basic_loader(
-    rank=0, worldsize=1, datasets=["dataset_1"], weights=[1], max_chunksize=1000
+    rank=0,
+    worldsize=1,
+    datasets=["dataset_1"],
+    max_chunksize=1000,
+    bos_token=None,
 ):
-    return Streaming_Doc_Dataset(
-        tmpdir.name,
+    assert len(datasets) == 1, "Basic loader takes only 1 dataset"
+    return StreamingDocDataset(
+        os.path.join(tmpdir.name, datasets[0]),
         rank,
         worldsize,
+        ArrowHandler(),
         -1,
-        datasets=datasets,
-        weights=weights,
         max_chunksize=max_chunksize,
+        bos_token=bos_token,
     )
 
 
 def basic_sampler(
     rank=0, worldsize=1, datasets=["dataset_1"], weights=[1], max_chunksize=1000
 ):
-    return Sampling_Dataset(
+    return SamplingDataset(
         tmpdir.name,
-        Streaming_Doc_Dataset,
-        rank,
-        worldsize,
+        basic_loader(rank, worldsize, datasets[:1], max_chunksize, None),
         -1,
-        datasets=datasets,
-        weights=weights,
-        max_chunksize=max_chunksize,
+        datasets,
+        weights,
     )
 
 
@@ -379,23 +434,19 @@ def basic_scalable(
     rank=0,
     worldsize=1,
     datasets=["dataset_1"],
-    weights=[1],
     max_chunksize=1000,
     n_logical_shards=7,
+    bos_token=None,
 ):
-    return Scalable_Shard_Dataset(
-        tmpdir.name,
-        rank,
-        worldsize,
+    assert len(datasets) == 1, "Basic loader takes only 1 dataset"
+    return ScalableShardDataset(
+        basic_loader(rank, worldsize, datasets, max_chunksize, bos_token),
         -1,
-        datasets=datasets,
-        weights=weights,
-        max_chunksize=max_chunksize,
-        n_logical_shards=n_logical_shards,
+        n_logical_shards,
     )
 
 
-def basic_scalable_sampler(
+def basic_sampler_scalable(
     rank=0,
     worldsize=1,
     datasets=["dataset_1"],
@@ -403,16 +454,14 @@ def basic_scalable_sampler(
     max_chunksize=1000,
     n_logical_shards=7,
 ):
-    return Sampling_Dataset(
+    return SamplingDataset(
         tmpdir.name,
-        Scalable_Shard_Dataset,
-        rank,
-        worldsize,
+        basic_scalable(
+            rank, worldsize, datasets[:1], max_chunksize, n_logical_shards, None
+        ),
         -1,
-        datasets=datasets,
-        weights=weights,
-        max_chunksize=max_chunksize,
-        n_logical_shards=n_logical_shards,
+        datasets,
+        weights,
     )
 
 
@@ -421,7 +470,7 @@ def test_single_epoch():
     single_epoch_check(basic_loader, True)
     single_epoch_check(basic_scalable)
     single_epoch_check(basic_sampler)
-    single_epoch_check(basic_scalable_sampler)
+    single_epoch_check(basic_sampler_scalable)
 
 
 def test_two_epoch():
@@ -429,7 +478,7 @@ def test_two_epoch():
     two_epoch_check(basic_loader, True)
     two_epoch_check(basic_scalable)
     two_epoch_check(basic_sampler)
-    two_epoch_check(basic_scalable_sampler)
+    two_epoch_check(basic_sampler_scalable)
 
 
 def test_chunk():
@@ -437,7 +486,7 @@ def test_chunk():
     chunk_check(functools.partial(basic_loader, max_chunksize=50), True)
     chunk_check(functools.partial(basic_scalable, max_chunksize=50))
     chunk_check(functools.partial(basic_sampler, max_chunksize=50))
-    chunk_check(functools.partial(basic_scalable_sampler, max_chunksize=50))
+    chunk_check(functools.partial(basic_sampler_scalable, max_chunksize=50))
 
 
 def test_two_loader():
@@ -445,7 +494,7 @@ def test_two_loader():
     two_loader_check(basic_loader, True)
     two_loader_check(functools.partial(basic_scalable, n_logical_shards=8))
     two_loader_check(basic_sampler)
-    two_loader_check(functools.partial(basic_scalable_sampler, n_logical_shards=8))
+    two_loader_check(functools.partial(basic_sampler_scalable, n_logical_shards=8))
 
 
 def test_multi_file():
@@ -453,7 +502,7 @@ def test_multi_file():
     multi_file_check(basic_loader, True)
     multi_file_check(basic_scalable)
     multi_file_check(basic_sampler)
-    multi_file_check(basic_scalable_sampler)
+    multi_file_check(basic_sampler_scalable)
 
 
 def test_reload_epoch():
@@ -461,50 +510,33 @@ def test_reload_epoch():
     reload_epoch_check(basic_loader)
     reload_epoch_check(functools.partial(basic_scalable, n_logical_shards=8))
     reload_epoch_check(basic_sampler)
-    reload_epoch_check(functools.partial(basic_scalable_sampler, n_logical_shards=8))
+    reload_epoch_check(functools.partial(basic_sampler_scalable, n_logical_shards=8))
 
 
 def test_reload_complete_epoch():
     # Single shard, two loaders: check that reloading mid-epoch can still complete a full epoch
-    # Skip scalable loaders as epoch 2 may sample workers differently from epoch 1
     reload_single_epoch_check(basic_loader)
+    reload_single_epoch_check(functools.partial(basic_scalable, n_logical_shards=8))
     reload_single_epoch_check(basic_sampler)
+    reload_single_epoch_check(
+        functools.partial(basic_sampler_scalable, n_logical_shards=8)
+    )
+
+
+def test_eos_bos_chunking():
+    # Single shard, single loader: check that enabling/disabling bos tokens maintains correct chunking behavior
+    single_doc_bos_eos_check(basic_loader, False)
+    single_doc_bos_eos_check(basic_loader, True)
+    single_doc_bos_eos_check(basic_scalable, False)
+    single_doc_bos_eos_check(basic_scalable, True)
 
 
 # SUBDATASET WEIGHTING CHECKS
 
 
-def test_weight():
-    """
-    A test for base, non-wrapper datasets using oversampling (currently Streaming_Doc and Scalable_Shard).
-    On the full dataset, with varying weights, on a single worker: with chunksize 50, run one epoch.
-    Verify that first half of dataset_1 is replicated by dataset_2, and second half is not, with appropriate ratios.
-    """
-    w1 = [1, 2, 4]
-    w2 = [1, 3, 7]
-    for i in w1:
-        for j in w2:
-            # Test chunk weights on doc dataloader (single epoch)
-            doc_dataset = functools.partial(
-                basic_loader,
-                datasets=["dataset_1", "dataset_2"],
-                weights=[i, j],
-                max_chunksize=50,
-            )
-            chunk_weight_check(i, j, doc_dataset, True)
-            # Test chunk weights on scalable dataloader (single epoch)
-            shard_dataset = functools.partial(
-                basic_scalable,
-                datasets=["dataset_1", "dataset_2"],
-                weights=[i, j],
-                max_chunksize=50,
-            )
-            chunk_weight_check(i, j, shard_dataset)
-
-
 def test_sampler_rates():
     """
-    A test for base, non-wrapper datasets using percentage sampling (currently Sampling and Scalable_Sampling).
+    A test for SamplingDataset with Streaming_ and Scalable_ subdatasets.
     On the full dataset, with varying weights, on a single worker: verify that loaders pull subdatasets at regular intervals
     (verifying that they're regularly picking the most-underviewed subdataset at each step).
     """
@@ -538,7 +570,7 @@ def test_sampler_rates():
                 ), f"Output {i} length {len(out)} does not match expected 51. Sequence so far: {s}"
 
     for i in range(3):
-        for m in [basic_sampler, basic_scalable_sampler]:
+        for m in [basic_sampler, basic_sampler_scalable]:
             check_rates(weights[i], target_rate[i], burnin[i], m)
 
 
@@ -558,86 +590,50 @@ def test_multi_reload_stress():
     """
     # Shard doc dataset
     d1 = lambda: [
-        Streaming_Doc_Dataset(
-            tmpdir.name,
+        StreamingDocDataset(
+            os.path.join(tmpdir.name, "dataset_2"),
             i,
             3,
+            ArrowHandler(),
             -1,
-            datasets=["dataset_1", "dataset_2"],
-            weights=[3, 5],
             max_chunksize=17,
         )
         for i in range(3)
     ]
     multi_reload_stress_check(d1)
 
-    # Sampling dataset
-    d2 = lambda: [
-        Sampling_Dataset(
-            tmpdir.name,
-            Streaming_Doc_Dataset,
-            i,
-            3,
-            -1,
-            datasets=["dataset_1", "dataset_2"],
-            weights=[3, 5],
-            max_chunksize=17,
-        )
-        for i in range(3)
-    ]
-    multi_reload_stress_check(d2)
-
     # Scalable shard dataset
-    d3 = lambda: [
-        Scalable_Shard_Dataset(
+    d2 = lambda x: [ScalableShardDataset(d, -1, n_logical_shards=15) for d in x]
+    multi_reload_stress_check(lambda: d2(d1()))
+
+    # Sampling dataset
+    d3 = lambda x: [
+        SamplingDataset(
             tmpdir.name,
-            i,
-            3,
+            d,
             -1,
-            n_logical_shards=15,
             datasets=["dataset_1", "dataset_2"],
             weights=[3, 5],
-            max_chunksize=17,
         )
-        for i in range(3)
+        for d in x
     ]
-    multi_reload_stress_check(d3)
+    multi_reload_stress_check(lambda: d3(d1()))
 
     # Nested scalable sampling dataset
-    d4 = lambda: [
-        Sampling_Dataset(
-            tmpdir.name,
-            Scalable_Shard_Dataset,
-            i,
-            3,
-            -1,
-            n_logical_shards=15,
-            datasets=["dataset_1", "dataset_2"],
-            weights=[3, 5],
-            max_chunksize=17,
-        )
-        for i in range(3)
-    ]
+    d4 = lambda: d3(d2(d1()))
     multi_reload_stress_check(d4)
 
     # Add buffer dataset
-    d5 = lambda x: [Buffer_Dataset(d, 73, pack_hard=True, bos_token=-1) for d in x]
-    # Stress test buffer + all bases
-    for d in [d1, d2, d3, d4]:
-        multi_reload_stress_check(lambda: d5(d()))
-
-    # # Add PLM dataset
-    # d6 = lambda x: [PLM_Dataset(d, -3, -2) for d in x]
-    # # plm / buffer / sample / scale / doc pipeline
-    # multi_reload_stress_check(lambda: d6(d5(d4())))
+    d5 = lambda x: [BufferDataset(d, 73, pack_hard=True, bos_token=-1) for d in x]
+    multi_reload_stress_check(lambda: d5(d4()))
 
     # Add preload buffer dataset
-    d7 = lambda x: [Preload_Buffer_Dataset(d, 99) for d in x]
+    d6 = lambda x: [PreloadBufferDataset(d, 99) for d in x]
     # preload / sample / scale / doc pipeline
-    multi_reload_stress_check(lambda: d7(d4()))
+    multi_reload_stress_check(lambda: d6(d5(d4())))
 
 
-# SCALABLE_DATASET TESTS
+# SCALABLEDATASET TESTS
 
 
 def test_scalable_partitioning():
@@ -646,19 +642,12 @@ def test_scalable_partitioning():
     physical worker count. Start with 4 workers with 12 logical shards, and for each of [1,2,3,6,12], verify that:
     1) no overlap exists between workers and 2) in over one epoch's worth of steps, each data point appears at least once
     """
-    for layer in [Scalable_Shard_Dataset, Sampling_Dataset]:
-        kwargs = {
-            "n_logical_shards": 12,
-            "datasets": ["dataset_1"],
-            "weights": [1],
-            "max_chunksize": 200,
-        }
-        datasets = [
-            layer(tmpdir.name, Scalable_Shard_Dataset, i, 4, -1, **kwargs)
-            if layer == Sampling_Dataset
-            else layer(tmpdir.name, i, 4, -1, **kwargs)
-            for i in range(4)
-        ]  # 25 steps per epoch
+    l1 = lambda r, w: basic_scalable(r, w, max_chunksize=200, n_logical_shards=12)
+    l2 = lambda r, w: basic_sampler_scalable(
+        r, w, max_chunksize=200, n_logical_shards=12
+    )
+    for layer in [l1, l2]:
+        datasets = [layer(i, 4) for i in range(4)]  # 25 steps per epoch
         loaders = [iter(d) for d in datasets]
 
         for _ in range(50):
@@ -666,32 +655,8 @@ def test_scalable_partitioning():
 
         states = [d.state_dict() for d in datasets]
 
-        kwargs = {
-            "n_logical_shards": 12,
-            "datasets": ["dataset_1"],
-            "weights": [1],
-            "max_chunksize": 200,
-        }
         for worldsize in [1, 2, 3, 6, 12]:
-            datasets = [
-                layer(
-                    tmpdir.name,
-                    Scalable_Shard_Dataset,
-                    i,
-                    worldsize,
-                    -1,
-                    **kwargs,
-                )
-                if layer == Sampling_Dataset
-                else layer(
-                    tmpdir.name,
-                    i,
-                    worldsize,
-                    -1,
-                    **kwargs,
-                )
-                for i in range(worldsize)
-            ]
+            datasets = [layer(i, worldsize) for i in range(worldsize)]
             [d.load_state_dict(states) for d in datasets]
             loaders = [iter(d) for d in datasets]
             outs = [[] for _ in datasets]
@@ -726,17 +691,7 @@ def test_scalable_shard_reload_scale():
     Because logical shards won't all be the exact same length when checkpointed, we complete the epoch of the shortest of the new workers.
     """
     datasets = [
-        Scalable_Shard_Dataset(
-            tmpdir.name,
-            i,
-            2,
-            -1,
-            n_logical_shards=8,
-            datasets=["dataset_1"],
-            weights=[1],
-            max_chunksize=40,
-        )
-        for i in range(2)
+        basic_scalable(i, 2, max_chunksize=40, n_logical_shards=8) for i in range(2)
     ]  # Length 300
     loaders = [iter(d) for d in datasets]
 
@@ -751,17 +706,7 @@ def test_scalable_shard_reload_scale():
     states = [d.state_dict() for d in datasets]
 
     datasets2 = [
-        Scalable_Shard_Dataset(
-            tmpdir.name,
-            i,
-            4,
-            -1,
-            n_logical_shards=8,
-            datasets=["dataset_1"],
-            weights=[1],
-            max_chunksize=40,
-        )
-        for i in range(4)
+        basic_scalable(i, 4, max_chunksize=40, n_logical_shards=8) for i in range(4)
     ]  # Length 300
     [d.load_state_dict(states) for d in datasets2]
     ndocs = [sum(d.n_docs_remaining) for d in datasets]
@@ -786,17 +731,7 @@ def test_scalable_sampler_reload_scale():
     Because logical shards and sampling ratios won't be exact, take a few extra steps then check that epoch is complete.
     """
     datasets = [
-        Sampling_Dataset(
-            tmpdir.name,
-            Scalable_Shard_Dataset,
-            i,
-            2,
-            -1,
-            n_logical_shards=8,
-            datasets=["dataset_1"],
-            weights=[1],
-            max_chunksize=40,
-        )
+        basic_sampler_scalable(i, 2, max_chunksize=40, n_logical_shards=8)
         for i in range(2)
     ]  # Length 300
     loaders = [iter(d) for d in datasets]
@@ -812,17 +747,7 @@ def test_scalable_sampler_reload_scale():
     states = [d.state_dict() for d in datasets]
 
     datasets2 = [
-        Sampling_Dataset(
-            tmpdir.name,
-            Scalable_Shard_Dataset,
-            i,
-            4,
-            -1,
-            n_logical_shards=8,
-            datasets=["dataset_1"],
-            weights=[1],
-            max_chunksize=40,
-        )
+        basic_sampler_scalable(i, 4, max_chunksize=40, n_logical_shards=8)
         for i in range(4)
     ]  # Length 300
     [d.load_state_dict(states) for d in datasets2]
@@ -840,7 +765,7 @@ def test_scalable_sampler_reload_scale():
             ), f"Expected value {i*100+suf} not found in output set {ins}"
 
 
-# BUFFER_DATASET TESTS
+# BUFFERDATASET TESTS
 
 
 class RandCounter:
@@ -849,6 +774,7 @@ class RandCounter:
         self.i = 0
         self.rank = 0
         self.worldsize = 1
+        self.datapath = tmpdir.name
 
     def __iter__(self):
         while True:
@@ -864,7 +790,7 @@ def test_buffer_format():
     for _ in range(100):
         # 100 trials of random length inputs
         base = RandCounter()
-        dataset = Buffer_Dataset(base, 100, pack_hard=True)
+        dataset = BufferDataset(base, 100, pack_hard=True)
         loader = iter(dataset)
         for _ in range(100):
             out = next(loader)
@@ -878,7 +804,7 @@ def test_buffer_format():
     # As above, but now with EOS tokens
     for _ in range(100):
         base = RandCounter()
-        dataset = Buffer_Dataset(base, 100, pack_hard=True, eos_token=-1)
+        dataset = BufferDataset(base, 100, pack_hard=True, eos_token=-1)
         loader = iter(dataset)
         for i in range(100):
             out = next(loader)
@@ -893,7 +819,7 @@ def test_buffer_format():
     # As above, but now with BOS tokens
     for _ in range(100):
         base = RandCounter()
-        dataset = Buffer_Dataset(base, 100, pack_hard=True, bos_token=-1)
+        dataset = BufferDataset(base, 100, pack_hard=True, bos_token=-1)
         loader = iter(dataset)
         for i in range(100):
             out = next(loader)
@@ -913,7 +839,7 @@ def test_buffer_delimiter_overlap():
     into the first slot in the next (and all subsequent) outputs. BOS should then refrain from adding.
     """
     dataset = basic_loader(max_chunksize=101)
-    dataset = Buffer_Dataset(dataset, 101, pack_hard=True, bos_token=-1)
+    dataset = BufferDataset(dataset, 101, pack_hard=True, bos_token=-1)
     loader = iter(dataset)
     for _ in range(100):
         out = next(loader)
@@ -926,7 +852,7 @@ def test_buffer_delimiter_overlap():
     ), f"Final token {out[-1]} does not end in expected value 99"
 
 
-# PRELOAD_BUFFER_DATASET TESTS
+# PRELOADBUFFERDATASET TESTS
 
 
 class SteadyCounter:
@@ -935,6 +861,7 @@ class SteadyCounter:
         self.i = 0
         self.rank = 0
         self.worldsize = 1
+        self.datapath = tmpdir.name
         self.l = l
 
     def __iter__(self):
@@ -948,7 +875,7 @@ def test_preload_buffer_uniformity():
     With underlying SteadyCounter and window size 200, take 1000 steps.
     Ensure 95% of values between 0 and 100 are emitted.
     """
-    dataset = Preload_Buffer_Dataset(SteadyCounter(1), 200)
+    dataset = PreloadBufferDataset(SteadyCounter(1), 200)
     loader = iter(dataset)
     outs = []
 
@@ -958,3 +885,94 @@ def test_preload_buffer_uniformity():
             outs.append(x)
 
     assert len(outs) > 95, f"Only {len(outs)} values <100 detected"
+
+
+# CHECKPOINTDATASET TESTS
+
+
+def test_checkpoint_reload_match():
+    """
+    Check that the auto-checkpointer saves and loads correctly, and that loaded checkpoints
+    resume properly (matching the continued behavior of the saved ones)
+    """
+    datasets = [
+        basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3, 5], max_chunksize=17)
+        for i in range(3)
+    ]
+    datasets = [BufferDataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets]
+    datasets = [
+        CheckpointDataset(x, os.path.join(tmpdir.name, "ckp_test"), 100, 2)
+        for x in datasets
+    ]
+    loaders = [
+        torch.utils.data.DataLoader(
+            x, num_workers=1, batch_size=2, prefetch_factor=1, persistent_workers=True
+        )
+        for x in datasets
+    ]
+    loaders = [iter(x) for x in loaders]
+    for _ in range(100):
+        for loader in loaders:
+            next(loader)
+
+    # Assert checkpoint exists and is properly formatted
+    ckps = os.listdir(os.path.join(tmpdir.name, "ckp_test", "checkpoints"))
+    assert len(ckps) == 1, f"Expected only one checkpoint (found {len(ckps)})"
+    ckp_shards = os.listdir(
+        os.path.join(tmpdir.name, "ckp_test", "checkpoints", ckps[0])
+    )
+    assert (
+        len(ckp_shards) == 3
+    ), f"Expected three checkpoint shards (found {len(ckp_shards)})"
+
+    # Create a second loader, pointing to first's checkpoint
+    datasets2 = [
+        basic_sampler(i, 3, ["dataset_1", "dataset_2"], [3, 5], max_chunksize=17)
+        for i in range(3)
+    ]
+    datasets2 = [BufferDataset(d, 73, pack_hard=True, bos_token=-1) for d in datasets2]
+    datasets2 = [
+        CheckpointDataset(x, os.path.join(tmpdir.name, "ckp_test"), 1000, 2)
+        for x in datasets2
+    ]
+    [d.setup() for d in datasets2]
+
+    # Assert checkpoints have loaded correctly
+    for d in datasets2:
+        assert d.step == 100, f"Expected to load back to step 100, got {d.step}"
+
+    # Continue iterating, verify matching behavior
+    loaders2 = [
+        torch.utils.data.DataLoader(
+            x, num_workers=1, batch_size=2, prefetch_factor=1, persistent_workers=True
+        )
+        for x in datasets2
+    ]
+    loaders2 = [iter(x) for x in loaders2]
+    for _ in range(300):
+        for loader, loader2 in zip(loaders, loaders2):
+            out = sum(next(loader2))
+            targ = sum(next(loader))
+            assert len(out) == len(
+                targ
+            ), f"Expected same output lengths, got {len(out)}, {len(targ)}"
+            for i, (x, y) in enumerate(zip(out, targ)):
+                assert x == y, f"Mismatch in position {i}: got {x}, {y}"
+
+
+# MULTIPROCESS DATALOADER WORKER TESTS
+
+
+def test_multiprocess_epoch():
+    """
+    Check that ScalableShardDataset partitions correctly over various worldsize / n_worker
+    combinations. A single epoch should contain each datapoint exactly once.
+    """
+    n_workers = [0, 2]
+    worldsizes = [2, 5]
+    for n in n_workers:
+        for w in worldsizes:
+            d = [basic_scalable(i, w, n_logical_shards=20) for i in range(w)]
+            # Add a dummy wrapper (append some pads) to test correct wrapper behavior
+            d = [BufferDataset(x, 110, False, pad_token=-1) for x in d]
+            single_epoch_loader_worker_check(d, n)

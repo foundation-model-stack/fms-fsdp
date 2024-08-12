@@ -77,6 +77,7 @@ def train(
 
     start = time.time()
     loop_start = time.time()
+    train_loss = -1
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break
@@ -170,7 +171,7 @@ def train(
                 batch_idx,
                 model,
                 optimizer,
-                train_loader,
+                None,
                 tokens_seen=tokens_seen + new_tokens_seen,
             )
 

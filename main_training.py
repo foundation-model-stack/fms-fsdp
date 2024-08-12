@@ -118,22 +118,33 @@ def main(**kwargs):
     checkpointer = Checkpointer(
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
     )
-    model, optimizer, train_loader, start_step, tokens_seen = checkpointer.load(
+    model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
         model,
         optimizer,
-        train_loader,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
+        None,
+        path=os.path.join(cfg.ckpt_load_path, "checkpoints/")
+        if not os.path.isfile(cfg.ckpt_load_path)
+        else cfg.ckpt_load_path,
+        strict=False,
     )
+    if not is_resuming:
+        start_step = 0
+        # Override loaded optim hyperparams with the current values
+        for g in optimizer.param_groups:
+            g["initial_lr"] = cfg.learning_rate
 
     # LR schedule
-    warmup_interval = min(2000, cfg.num_steps // 20)
-    schedule = lambda x: min(
-        1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-        0.1
-        + 0.5
-        * (1 - 0.1)
-        * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-    )
+    if cfg.training_stage == "annealing":
+        schedule = lambda x: 1 - x / cfg.num_steps
+    else:
+        warmup_interval = min(2000, cfg.num_steps // 20)
+        schedule = lambda x: min(
+            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+            0.1
+            + 0.5
+            * (1 - 0.1)
+            * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+        )
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler
@@ -155,6 +166,8 @@ def main(**kwargs):
         start_step,
         tokens_seen,
     )
+
+    checkpointer.save_single_file(cfg.num_steps, model)
 
     dist.barrier()
     dist.destroy_process_group()

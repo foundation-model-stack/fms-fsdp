@@ -12,12 +12,20 @@ class train_config:
     # dataset and dataloader
     use_dummy_dataset: bool = False
     data_path: str = "/fsx/data"
+    file_type: str = "arrow"
+    col_name: str = "tokens"
+    tokenizer_path: str = "/fsx/tokenizer"
     datasets: str = "lang=en/dataset=commoncrawl,lang=en/dataset=webhose,lang=en/dataset=github_clean,lang=de/dataset=wikipedia,lang=es/dataset=wikipedia,lang=fr/dataset=wikipedia,lang=ja/dataset=wikipedia,lang=pt/dataset=wikipedia,lang=en/dataset=wikimedia,lang=en/dataset=uspto,lang=en/dataset=pubmedcentral,lang=en/dataset=arxiv,lang=en/dataset=stackexchange"
     weights: str = "7725,500,550,28,17,22,25,8,100,500,175,250,100"
     seq_length: int = 4096
     vocab_size: int = 32000
-    sep_token: int = 1
+    bos_token: Optional[int] = None
+    eos_token: int = 0
+    bol_token: Optional[int] = None
+    eol_token: Optional[int] = None
+    strip_tokens: str = ""
     logical_shards: int = 1024
+    num_workers: int = 1
 
     # fsdp policies
     sharding_strategy: str = "hsdp"
@@ -29,9 +37,13 @@ class train_config:
     # training spec
     batch_size: int = 2
     num_steps: int = 1000000
+    training_stage: str = "initial"
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
     seed: int = 2023
+
+    # continued training spec
+    resuming_dataset: bool = False
 
     # profiling
     use_profiler: bool = False

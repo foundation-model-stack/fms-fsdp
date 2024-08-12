@@ -178,15 +178,16 @@ class Checkpointer:
         Strict determines whether to use strict loading or not FOR SINGLEFILE LOADING ONLY.
         Returns model, optimizer, dataloader, current step, and current tokens seen.
         """
+        is_resuming = False
         if self._validate_ckp_path(self.ckp_path) is not None:
             path = self.ckp_path
-            reset_stepcount = False
+            is_resuming = True
         load_path = self._validate_ckp_path(path)
         if load_path is None:
             self.report(
                 f"No valid checkpoint detected at {path}, starting from scratch."
             )
-            return model, optimizer, dataloader, 0, 0
+            return model, optimizer, dataloader, 0, 0, False
         else:
             self.report(f"Prior checkpoint {load_path} detected.")
             model_load_time = time.time()
@@ -198,7 +199,7 @@ class Checkpointer:
                     f"Checkpoint {load_path} is a single-file checkpoint containing only a model. Optimizer and dataloader are from scratch.",
                     model_load_time=time.time() - model_load_time,
                 )
-                return model, optimizer, dataloader, 0, 0
+                return model, optimizer, dataloader, 0, 0, is_resuming
             else:
                 # Load model
                 with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
@@ -215,7 +216,7 @@ class Checkpointer:
                 step = 0
                 ntok = 0
                 # Load metadata
-                if not reset_stepcount:
+                if is_resuming:
                     metadata = torch.load(os.path.join(load_path, "metadata.pth"))
                     step = metadata.get("step", 0)
                     ntok = metadata.get("tokens_seen", 0)
@@ -243,7 +244,7 @@ class Checkpointer:
                     self.report(dataset_load_time=time.time() - data_load_time)
                 else:
                     self.report("Skipping dataset load, no dataloader provided.")
-                return model, optimizer, dataloader, step, ntok
+                return model, optimizer, dataloader, step, ntok, is_resuming
 
     def save(
         self,
@@ -260,7 +261,7 @@ class Checkpointer:
         with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
             model_state = model.state_dict()
             optim_state = FSDP.sharded_optim_state_dict(model, optimizer)
-        dataloader_state = dataloader.dataset
+        dataloader_state = None if dataloader is None else dataloader.dataset
 
         save_name = os.path.join(self.ckp_path, "step_" + str(step) + "_ckp")
         state_dict = {"model_state": model_state, "optimizer_state": optim_state}

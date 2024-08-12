@@ -1,6 +1,6 @@
-torch>=2.1.0
+torch>=2.2.0
 fire==0.5.0
 pyarrow==15.0.0
-transformers==4.37.2
+transformers==4.40.2
 ibm-fms>=0.0.3
 fms-extras @ git+https://github.com/foundation-model-stack/fms-extras@main
