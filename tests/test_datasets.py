@@ -20,6 +20,7 @@ def generate_sequential_multidata():
 
     os.mkdir(os.path.join(tmpdir.name, "dataset_1"))
     os.mkdir(os.path.join(tmpdir.name, "dataset_2"))
+    os.mkdir(os.path.join(tmpdir.name, "dataset_2", "subfolder"))
     with pa.ipc.new_file(
         os.path.join(tmpdir.name, "dataset_1/fullshard.arrow"), schema
     ) as writer:
@@ -35,7 +36,7 @@ def generate_sequential_multidata():
             writer.write(pa.record_batch([out], schema=schema))
 
     with pa.ipc.new_file(
-        os.path.join(tmpdir.name, "dataset_2/quartershard_2.arrow"), schema
+        os.path.join(tmpdir.name, "dataset_2/subfolder/quartershard_2.arrow"), schema
     ) as writer:
         for i in range(50):
             out = list(range(2500 + i * 50, 2500 + i * 50 + 50))
@@ -47,7 +48,7 @@ def generate_sequential_multidata():
     f.write("dataset/filename,documents,tokens\n")
     f.write("/dataset_1/fullshard.arrow,100,10000\n")
     f.write("/dataset_2/quartershard_1.arrow,50,2500\n")
-    f.write("/dataset_2/quartershard_2.arrow,50,2500\n")
+    f.write("/dataset_2/subfolder/quartershard_2.arrow,50,2500\n")
     f.close()
 
     return tmpdir
