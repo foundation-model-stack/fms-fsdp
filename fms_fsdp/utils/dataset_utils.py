@@ -289,6 +289,13 @@ class _ShardFileHandler:
     Must implement open, length, indexing, and slicing functions.
     """
 
+    def is_legal(self, filepath: str):
+        """
+        Given a file path, determine if it qualifies for this handler.
+        Ideally does not involve opening the file.
+        """
+        return os.path.isfile(filepath)
+
     def open(self, path: str):
         """
         Open the file, to be indexed via self.get() method.
@@ -326,6 +333,11 @@ class _ShardFileHandler:
 class ArrowHandler(_ShardFileHandler):
     """
     Reader for indexable, pre-tokenized PyArrow shard files.
+    Pyarrow shard files are expected to hold multiple RecordBatches,
+    where each RecordBatch has a "tokens" field consisting of
+    a single token list (i.e. each document is a single sequence
+    under a "token" field, and the file is a list of such sequences).
+
     A preferred format as we can load document chunks without having to ever pull
     the entire document or shard file, allowing for graceful handling of large documents.
     Non-standard data format, though.
@@ -333,6 +345,9 @@ class ArrowHandler(_ShardFileHandler):
 
     def __init__(self, col_name: str = "tokens"):
         self.col_name = col_name
+
+    def is_legal(self, filepath: str):
+        return "arrow" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
         return pa.ipc.open_file(pa.memory_map(path))
@@ -364,6 +379,9 @@ class ParquetHandler(_ShardFileHandler):
     def __init__(self, tokenizer_path: str, col_name: str = "text"):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.col_name = col_name
+
+    def is_legal(self, filepath: str):
+        return "parquet" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
         return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
@@ -723,16 +741,11 @@ class BufferDataset(_WrapperDataset):
 
 class StreamingDocDataset(_StatefulDataset):
     """
-    The base distributed dataset for loading sequences/documents from pyarrow shards.
-    Pyarrow shard files are expected to hold multiple recordBatches, where each recordBatch has a "tokens"
-    field consisting of a single token list. (i.e. each document is a single sequence under a "token" field,
-    and the file is a list of such sequences)
-    Relies on a compiled metadata file to fetch shardfile lengths, assumes file already exists in the parent directory,
-    and is in proper csv format (first row "dataset/filename,documents,tokens", subsequent rows these values).
+    The base distributed dataset for loading sequences/documents from file shards.
 
     For a single dataset directory, splits shard files into x=worldsize fragments and grabs a 1/n contiguous
     span of shard fragments (contiguous to limit file reads from cloud/disk).
-    Logs the number of documents owned from each shardfile, and relies on ZCG random bijection to
+    Logs the number of documents owned from each shardfile, and relies on LCG random bijection to
     map contiguous range of indices to shuffled, noncontiguous set of documents from each shard file.
     Shuffles the file list deterministically to hop from file to file.
 
@@ -740,14 +753,19 @@ class StreamingDocDataset(_StatefulDataset):
     Shards are thus pulled no more than once per epoch.
     Returns documents in chunks up to size max_chunksize, and handles delimiter token placement between documents.
 
-    StreamingDocDataset grabs files from a flat directory representing a single dataset.
-    For percentage-based sampling of multiple subdatasets, see SamplingDataset.
+    StreamingDocDataset grabs files from a directory representing a single dataset.
+    This directory need not be flat.
+    For percentage-based sampling over multiple such subdatasets, see SamplingDataset.
+
+    When available in the parent directory, relies on a compiled metadata file to fetch shardfile lengths.
+    Expects csv file (first row "dataset/filename,documents,tokens", subsequent rows these values) under a 'meta' directory.
+    This can be removed in the future.
     ...
     Args
     ----
     datapath : str
-        Absolute path to the dataset directory. Expects directory containing pyarrow shardfiles.
-        Parent directory should contain 'meta' folder with metadata csv file inside.
+        Absolute path to the dataset directory. Expects directory containing shardfiles.
+        Directory need not be flat.
     rank : int
         Current worker index
     worldsize : int
@@ -765,7 +783,7 @@ class StreamingDocDataset(_StatefulDataset):
     seed : int
         The random seed for deterministic shuffling/sharding
     min_length : int
-        Sequences below this length are skipped
+        Documents below this length are skipped
     max_chunksize : int
         Maximum sequence length to return. Break long docs into chunks of this size or shorter.
     verbose : bool
@@ -848,9 +866,10 @@ class StreamingDocDataset(_StatefulDataset):
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
             shards = [
-                shard
-                for shard in os.listdir(datapath)
-                if os.path.isfile(os.path.join(datapath, shard))
+                os.path.join(root, name)[len(datapath) + 1 :]
+                for root, dirs, files in os.walk(datapath, topdown=False)
+                for name in files
+                if self.filehandler.is_legal(os.path.join(root, name))
             ]
             shards.sort()  # Ensure consistent sharding across machines
             start_frag = (self.rank * self.worldsize * len(shards)) // self.worldsize
@@ -1212,15 +1231,12 @@ class SamplingDataset(_WrapperDataset):
     This is accomplished by maintaining a _StatefulDataset for each subdataset, and tracking
     the number of tokens emitted by each. Whichever loader is furthest from its target will be
     the next to pass a document.
-
-    All args except for dataset_type, datasets, weights and delimiter are pass-through args for
-    the component _StatefulDatasets and are documented in the appropriate classes.
     ...
     Args
     ----
     datapath : str
-        Absolute path to the dataset directory. Expects directory to contain subfolders with
-        pyarrow shardfiles, and also a 'meta' folder with metadata csv file inside.
+        Absolute path to the dataset directory. Expects directory to contain subfolders,
+        which in turn contain shard files.
     dataset : ScalableShardDataset | StreamingDocDataset
         Fully instantiated dataset. Cloned across desired subdatasets during setup.
     delimiter_token : Any
