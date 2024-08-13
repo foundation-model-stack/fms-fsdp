@@ -126,11 +126,11 @@ def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
-    data = Preload_Buffer_Dataset(data, 10000)
+    data = PreloadBufferDataset(data, 10000)
     # Apply desired postprocessing steps in sequence
-    data = Preprocess_Dataset(data, torch.IntTensor)
+    data = PreprocessDataset(data, torch.IntTensor)
     for p in postprocess:
-        data = Preprocess_Dataset(data, p)
+        data = PreprocessDataset(data, p)
 
     # Enable auto-saving
     data = CheckpointDataset(

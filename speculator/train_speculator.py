@@ -4,8 +4,10 @@ import os
 import fire  # type: ignore
 import torch
 import torch.optim as optim
+from fms.utils import serialization
 from fms.models import get_model, register_model
 from fms.models.llama import LLaMABlock, LLaMAConfig
+from fms.models.llama import _hf_sd_to_fms_sd as _llama_hf_sd_to_fms_sd
 from fms_extras.models.speculator import MLPSpeculator  # type: ignore
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -33,6 +35,7 @@ def _llama_factory_factory(config):
 
 
 register_model("embedllama", "7b", _llama_factory_factory(LLaMAConfig()))
+serialization.register_adapter("embedllama", "hf", _llama_hf_sd_to_fms_sd)
 
 
 def main(**kwargs):
@@ -157,7 +160,7 @@ def main(**kwargs):
 
     # optionally load from checkpoint (when continue pretraining)
     checkpointer = Checkpointer(cfg.ckpt_save_path, 1000, "ddp", rank, local_rank)
-    speculator, optimizer, train_loader, start_step, tokens_seen = checkpointer.load(
+    speculator, optimizer, train_loader, start_step, tokens_seen, _ = checkpointer.load(
         speculator,
         optimizer,
         train_loader,
