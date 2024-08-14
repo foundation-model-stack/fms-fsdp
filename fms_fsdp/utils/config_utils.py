@@ -48,12 +48,17 @@ def get_model_config(model_variant):
             hidden_grow_factor=13824 / 5120,
         )
     elif model_variant == "llama2_7b":
-        llama_config = LLaMAConfig()
+        llama_config = LLaMAConfig(
+            hidden_grow_factor=3,
+            kvheads=8,
+        )
     elif model_variant == "llama2_1.4b":
         llama_config = LLaMAConfig(
             emb_dim=2048,
             nheads=16,
             nlayers=24,
+            hidden_grow_factor=3,
+            kvheads=4,
         )
     elif model_variant == "llama3_8b":
         llama_config = LLaMAConfig(
@@ -133,6 +138,14 @@ def get_model_config(model_variant):
             kvheads=8,
             nlayers=80,
             hidden_grow_factor=3.5,
+            max_expected_seq_len=4096,
+        )
+    elif model_variant == "llama3_194m_4k":
+        llama_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=1024,
+            nheads=8,
+            nlayers=10,
             max_expected_seq_len=4096,
         )
     else:

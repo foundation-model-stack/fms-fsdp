@@ -1,13 +1,22 @@
 import torch
 
 from fms_fsdp.utils.dataset_utils import (
-    Buffer_Dataset,
-    Checkpoint_Dataset,
-    Preload_Buffer_Dataset,
-    Preprocess_Dataset,
-    Sampling_Dataset,
-    Scalable_Shard_Dataset,
+    ArrowHandler,
+    BufferDataset,
+    CheckpointDataset,
+    ParquetHandler,
+    PreloadBufferDataset,
+    PreprocessDataset,
+    SamplingDataset,
+    ScalableShardDataset,
+    StreamingDocDataset,
 )
+
+
+_handler_map = {
+    "arrow": ArrowHandler,
+    "hf_parquet": ParquetHandler,
+}
 
 
 def get_dummy_loader(cfg, rank, world_size):
@@ -68,23 +77,42 @@ def get_data_loader(cfg, rank, world_size):
         int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip()) > 0
     ]
     droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
-    data = Sampling_Dataset(
+    assert (
+        cfg.file_type in _handler_map
+    ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
+    if cfg.file_type == "hf_parquet":
+        filehandler = ParquetHandler(cfg.tokenizer_path, cfg.col_name)
+    else:
+        filehandler = _handler_map[cfg.file_type](cfg.col_name)
+    # Base reader layer
+    data = StreamingDocDataset(
         cfg.data_path,
-        Scalable_Shard_Dataset,
         rank,
         world_size,
+        filehandler,
         cfg.eos_token,
         bos_token=cfg.bos_token,
         strip_tokens=set(droplist),
         min_length=3,
-        datasets=datasets,
-        weights=weights,
         seed=cfg.seed,
-        verbose=(rank == 0),
+    )
+    # Add rescaling/resharding
+    data = ScalableShardDataset(
+        data,
+        cfg.eos_token,
         n_logical_shards=cfg.logical_shards,
     )
+    # Add multi-dataset handling
+    data = SamplingDataset(
+        cfg.data_path,
+        data,
+        cfg.eos_token,
+        datasets=datasets,
+        weights=weights,
+        verbose=(rank == 0),
+    )
     # Wrap above dataset in packing logic to form constant-length lines.
-    data = Buffer_Dataset(
+    data = BufferDataset(
         data,
         cfg.seq_length + 1,
         bos_token=cfg.bol_token,
@@ -92,18 +120,20 @@ def get_data_loader(cfg, rank, world_size):
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
-    data = Preload_Buffer_Dataset(data, 10000)
+    data = PreloadBufferDataset(data, 10000)
     # Split line into input and target for the CLM task.
-    data = Preprocess_Dataset(data, causal_lm)
+    data = PreprocessDataset(data, causal_lm)
     # Enable auto-saving
-    data = Checkpoint_Dataset(
+    data = CheckpointDataset(
         data,
-        cfg.ckpt_load_path,
+        cfg.ckpt_load_path if cfg.resuming_dataset else cfg.ckpt_save_path,
         cfg.checkpoint_interval,
         cfg.batch_size,
         cfg.ckpt_save_path,
     )
-    return torch.utils.data.DataLoader(data, num_workers=1, batch_size=cfg.batch_size)
+    return torch.utils.data.DataLoader(
+        data, num_workers=cfg.num_workers, batch_size=cfg.batch_size
+    )
 
 
 def parse_data_args(datas, weights):
