@@ -1182,6 +1182,9 @@ class ScalableShardDataset(_WrapperDataset):
             if self.current_reader is not None:
                 ind = self.current_reader
             else:
+                assert (
+                    sum(self.n_docs_remaining) > 0
+                ), f"No documents detected in {self.datapath}"
                 ind = torch.multinomial(
                     torch.tensor(self.n_docs_remaining, dtype=torch.float),
                     1,
