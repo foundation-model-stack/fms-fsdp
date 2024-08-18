@@ -58,7 +58,7 @@ def get_data_loader(cfg, rank, world_size):
         Number of distributed workers. Used for handling dataset sharding logic.
     """
 
-    #datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
+    datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
 
     def causal_lm(data_seq, prompt_len=0):
         """
@@ -105,14 +105,14 @@ def get_data_loader(cfg, rank, world_size):
         n_logical_shards=cfg.logical_shards,
     )
     # Add multi-dataset handling
-    #data = SamplingDataset(
-    #    cfg.data_path,
-    #    data,
-    #    cfg.eos_token,
-    #    datasets=datasets,
-    #    weights=weights,
-    #    verbose=(rank == 0),
-    #)
+    data = SamplingDataset(
+        cfg.data_path,
+        data,
+        cfg.eos_token,
+        datasets=datasets,
+        weights=weights,
+        verbose=(rank == 0),
+    )
     # Wrap above dataset in packing logic to form constant-length lines.
     data = BufferDataset(
         data,

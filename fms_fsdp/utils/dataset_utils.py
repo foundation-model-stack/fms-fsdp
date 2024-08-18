@@ -323,6 +323,7 @@ class ArrowHandler(_ShardFileHandler):
         return pa.ipc.open_file(pa.memory_map(path))
 
     def length(self, path: str):
+        #print("Alexei Inside open",path)
         return self.open(path).num_record_batches
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
@@ -825,6 +826,7 @@ class StreamingDocDataset(_StatefulDataset):
         verbose: bool = False,
     ):
         super().__init__(datapath, rank, worldsize)
+        #print("Alexei Inside StreamingDocDataset init")
         self.seed = seed
         self.datapath = datapath
         self.filehandler = filehandler
@@ -871,6 +873,7 @@ class StreamingDocDataset(_StatefulDataset):
         All rank-dependent setup, which must occur after init
         (rank assignment, data partitioning, shuffling)
         """
+        #print("Alexei Inside StreamingDocDataset setup")
         if not self.is_setup:
             datapath = self.datapath
             self.is_setup = True
@@ -881,15 +884,19 @@ class StreamingDocDataset(_StatefulDataset):
             pardir, dataset = pathsplit
             self.dataset = dataset
 
+            #print("datapath",datapath)
+            #for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True):
+            #    print(root, dirs, files, [os.path.isfile(os.path.join(root, name)) for name in files])
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
             shards = [
                 os.path.join(root, name)[len(datapath) + 1 :]
-                for root, dirs, files in os.walk(datapath, topdown=False)
+                for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True)
                 for name in files
                 if ("arrow" in name or "parquet" in name) and os.path.isfile(os.path.join(root, name))
             ]
             shards.sort()  # Ensure consistent sharding across machines
+            #print("shards",shards)
             start_frag = (self.rank * self.worldsize * len(shards)) // self.worldsize
             end_frag = (
                 (self.rank + 1) * self.worldsize * len(shards)
@@ -916,10 +923,12 @@ class StreamingDocDataset(_StatefulDataset):
                     reader = csv.DictReader(csvfile)
                     for row in reader:
                         fullpath = row["dataset/filename"]
-                        prefix = fullpath.find("/" + dataset) + 1
+                        prefix = fullpath.find("/" + dataset + "/") + 1
+                        #print(fullpath,prefix)
                         if prefix > 0:
                             key = fullpath[prefix + len(dataset) + 1 :]
                             doc_counts[key] = int(row["documents"])
+                            #if self.rank==0: print(key,doc_counts[key])
             else:
                 # Count file does not exist, touch every owned file for length
                 unique_shardfiles = set(shard for shard, frag in shardfrags)
@@ -932,7 +941,11 @@ class StreamingDocDataset(_StatefulDataset):
             ndocs = -1
             docset = {}  # shardid -> (min docid, max docid)
             for i, (shard, frag) in enumerate(shardfrags):
-                ndocs = doc_counts[shard]
+                try:
+                    ndocs = doc_counts[shard]
+                except:
+                    if self.rank==0: print("Alexei Not found", self.dataset, shard)
+                    continue
                 doc_start = (ndocs * frag) // self.worldsize
                 doc_end = (
                     ndocs * frag + ndocs
@@ -986,6 +999,7 @@ class StreamingDocDataset(_StatefulDataset):
         If new filepath does not match the current one,
         open a new reader on that filepath (pull file on demand)
         """
+        #print(f"Alexei {self.rank} inside get_reader")
         if newpath != path:
             del reader
             if self.verbose:
@@ -1297,7 +1311,8 @@ class SamplingDataset(_WrapperDataset):
             for w in weights:
                 assert w > 0, f"Sampling rate {w} must be positive"
         self.weights = [1] * len(self.datasets) if weights is None else weights
-        self.weights = [w / sum(self.weights) for w in self.weights]
+        #self.weights = [w / sum(self.weights) for w in self.weights]
+        self.weights = [w / self.worldsize for w in self.weights]
 
         self.tokens_seen = [0] * len(self.datasets)
 
@@ -1335,13 +1350,28 @@ class SamplingDataset(_WrapperDataset):
             else:
                 # Choose new subdataset to draw from
                 # (whichever is currently most underrepresented compared to target rate)
-                offset = [
-                    self.weights[i]
-                    - self.tokens_seen[i] / (sum(self.tokens_seen) + 1e-9)
-                    for i in range(len(self.datasets))
-                ]
-                offset_argmax = max((diff, i) for i, diff in enumerate(offset))[1]
-                self.current_iterator = offset_argmax
+                #offset = [
+                #    self.weights[i]
+                #    - self.tokens_seen[i] / (sum(self.tokens_seen) + 1e-9)
+                #    for i in range(len(self.datasets))
+                #]
+                #offset_argmax = max((diff, i) for i, diff in enumerate(offset))[1]
+                #self.current_iterator = offset_argmax
+                for i in range(len(self.datasets)):
+                    if self.tokens_seen[i]<self.weights[i]:
+                        if self.rank==0:
+                            tokens_seen=sum([d.tokens_seen for d in self.data[i].data])
+                            #n_docs_remaining=sum(d for d in self.data[i].n_docs_remaining)
+                            print("dataset",i,"tokens_computed",self.tokens_seen[i],"weights",self.weights[i],"tokens_seen",tokens_seen) #,"n_docs_remaining",n_docs_remaining)
+                        self.current_iterator=i
+                        break
+                else:
+                    self.current_iterator=len(self.datasets)-1 # Continue using last dataset for rest of the tokens (in buffer)
+                    if self.rank==0:
+                        print("dataset",self.current_iterator,"tokens_computed",self.tokens_seen[self.current_iterator],"weights",self.weights[self.current_iterator])
+                    #if self.rank==0: print("Alexei resetting tokens_seen")
+                    #for i in range(len(self.datasets)): self.tokens_seen[i]=0
+                    #self.current_iterator=0
 
     def state_dict(self):
         self.setup()
