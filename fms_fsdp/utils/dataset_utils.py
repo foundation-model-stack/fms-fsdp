@@ -624,12 +624,20 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
 
         # Assemble document set owned by this worker:
         # listdir, assemble shardfraglist (ind -> shard, frag)
+
         shards = [
-            shard
-            for shard in os.listdir(datapath)
-            if os.path.isfile(os.path.join(datapath, shard))
-            and "arrow" in os.path.join(datapath, shard)
+            os.path.join(root, name)[len(datapath) + 1 :]
+            for root, dirs, files in os.walk(datapath, topdown=False)
+            for name in files
+            if "arrow" in name and os.path.isfile(os.path.join(root, name))
         ]
+
+        #shards = [
+        #    shard
+        #    for shard in os.listdir(datapath)
+        #    if os.path.isfile(os.path.join(datapath, shard))
+        #    and "arrow" in os.path.join(datapath, shard)
+        #]
         shards.sort()  # Ensure consistent sharding across machines
         start_frag = (rank * worldsize * len(shards)) // worldsize
         end_frag = ((rank + 1) * worldsize * len(shards)) // worldsize

@@ -52,3 +52,8 @@ class train_config:
 
     # compile
     use_torch_compile: bool = True
+
+    kl_regularizer: int = 100
+    kl_regularizer_warmup_steps: int = 2000
+    reweighting_strategy: str = "upper"
+
