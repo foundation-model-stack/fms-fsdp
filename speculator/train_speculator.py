@@ -7,13 +7,13 @@ import torch
 import torch.optim as optim
 from fms.models import get_model
 from fms.models.llama import LLaMABlock
+from fms.utils import generation, tokenizers
 from fms_extras.models.speculator import MLPSpeculator
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
 from torch.optim.lr_scheduler import LambdaLR
 
-from fms.utils import generation, tokenizers
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import update_config
@@ -25,6 +25,7 @@ from fms_fsdp.utils.train_utils import (
     setup_environ_flags,
 )
 from speculator.train_speculator_utils import train_speculator
+
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
