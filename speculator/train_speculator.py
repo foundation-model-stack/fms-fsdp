@@ -251,26 +251,32 @@ def main(**kwargs):
     )
 
     # LR schedule
-    # These functions provide LR scaling factors in [0,1] based on step count.
+    # These functions map step count to LR scaling factor in [0,1].
     # Stage 1: warm up over first 2k or 5% of steps, whichever is smaller.
     # Then cosine anneal to 10% of max LR.
     warmup_interval1 = min(2000, cfg.stage2_start_step // 20)
     stage1_schedule = lambda x: min(
+        # Parabolic warmup
         1 - (1 - min(x, warmup_interval1) / warmup_interval1) ** 2,
+        # Final .1 scaling factor
         0.1
+        # Cosine anneal from 1 to .1 over stage2_start_step steps
         + 0.5
         * (1 - 0.1)
         * (
             1
-            + math.cos(min(x, cfg.stage2_start_step) / cfg.stage2_start_step * math.pi)
+            + math.cos(x / cfg.stage2_start_step * math.pi)
         ),
     )
     # Stage 2: warm up over first 2k or 5% of steps, whichever is smaller.
     # Then cosine anneal to 10% of stage 1's final LR.
     warmup_interval2 = min(2000, (cfg.num_steps - cfg.stage2_start_step) // 20)
     stage2_schedule = lambda x: min(
+        # Parabolic warmup to stage2's max LR (10% of stage1's max LR)
         0.1 * (1 - (1 - min(x, warmup_interval2) / warmup_interval2) ** 2),
+        # Final 10% of 10% scaling factor
         0.01
+        # Cosine anneal from .1 to .01 over remaining stage2 steps
         + 0.05
         * (1 - 0.1)
         * (
