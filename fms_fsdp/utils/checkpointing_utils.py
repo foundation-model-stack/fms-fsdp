@@ -38,7 +38,7 @@ def get_oldest(targdir, qualifier=lambda x: True):
     if os.path.exists(targdir) and len(os.listdir(targdir)) > 0:
         oldest = min(
             [x for x in os.listdir(targdir) if qualifier(os.path.join(targdir, x))],
-            key=os.path.getctime,
+            key=lambda path: os.path.getctime(os.path.join(targdir, path)),
         )
         return os.path.join(targdir, oldest)
     return None
