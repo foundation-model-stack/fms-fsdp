@@ -165,7 +165,7 @@ def main(**kwargs):
 
     model.eval()
     with torch.no_grad():
-        test_model(rank, model, cfg.model_arch, cfg, prompt_type="chat")
+        test_model(rank, model, cfg.model_arch, cfg)
 
     emb_dim = get_emb_dim(model)
     vocab_size = get_vocab_size(model)

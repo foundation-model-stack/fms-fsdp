@@ -7,6 +7,8 @@ export FI_EFA_SET_CUDA_SYNC_MEMOPS=0
 
 MODEL_ARGS="\
 --model_path=/path/to/models/meta-llama/Llama-2-7b-hf
+--model_arch=embedllama
+--model_variant=7b
 --ckpt_load_path=/path/to/checkpoints/llama2-7b
 --ckpt_save_path=/path/to/checkpoints/llama2-7b
 --logical_shards=768
