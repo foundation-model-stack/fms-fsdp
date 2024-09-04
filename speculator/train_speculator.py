@@ -19,7 +19,7 @@ from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
-    get_policies,
+    get_mixed_precision_policy,
     get_profiler,
     setup,
     setup_environ_flags,
@@ -65,6 +65,45 @@ def test_model(rank, model, arch, cfg, prompt_type="chat"):
         )
 
 
+def get_emb_dim(model):
+    if hasattr(model.config, "emb_dim"):
+        emb_dim = model.config.emb_dim
+    elif hasattr(model.config, "dim"):  # Mixtral
+        emb_dim = model.config.dim
+    elif hasattr(model.config, "hidden_size"):  # HF
+        emb_dim = model.config.hidden_size
+    else:
+        raise Exception("config missing embedding dimension")
+    return emb_dim
+
+
+def get_vocab_size(model):
+    if hasattr(model.config, "src_vocab_size"):  # FMS
+        vocab_size = model.config.src_vocab_size
+    elif hasattr(model.config, "vocab_size"):  # HF
+        vocab_size = model.config.vocab_size
+    else:
+        raise Exception("config missing vocab size config")
+    return vocab_size
+
+
+def get_training_data_loader(rank, cfg, world_size, speculator_mesh):
+    if rank == 0:
+        print(f"{time.time()} Constructing datasets...")
+    if not cfg.use_dummy_dataset:
+        if cfg.sharding_strategy == "tp":
+            train_loader = get_data_loader(
+                cfg, speculator_mesh.get_rank(), speculator_mesh.size(), postprocess=[]
+            )
+        else:
+            train_loader = get_data_loader(cfg, rank, world_size, postprocess=[])
+    else:
+        train_loader = get_dummy_loader(cfg, rank, world_size)
+    if rank == 0:
+        print(f"{time.time()} Datasets constructed!")
+    return train_loader
+
+
 def main(**kwargs):
     # get configs
     cfg = config.train_config()
@@ -105,14 +144,7 @@ def main(**kwargs):
     setup_environ_flags()
     torch.set_default_dtype(torch.bfloat16)
 
-    # get policy
-    (
-        mixed_precision_policy,
-        wrapping_policy,
-        sharding_strategy_policy,
-        apply_selective_ac,
-        param_init_fn,
-    ) = get_policies(cfg, rank, LLaMABlock)
+    mixed_precision_policy = get_mixed_precision_policy(cfg, rank)
 
     model = get_model(
         cfg.model_arch,
@@ -135,21 +167,8 @@ def main(**kwargs):
     with torch.no_grad():
         test_model(rank, model, cfg.model_arch, cfg, prompt_type="chat")
 
-    if hasattr(model.config, "emb_dim"):
-        emb_dim = model.config.emb_dim
-    elif hasattr(model.config, "dim"):  # Mixtral
-        emb_dim = model.config.dim
-    elif hasattr(model.config, "hidden_size"):  # HF
-        emb_dim = model.config.hidden_size
-    else:
-        raise Exception("config missing embedding dimension")
-
-    if hasattr(model.config, "src_vocab_size"):  # FMS
-        vocab_size = model.config.src_vocab_size
-    elif hasattr(model.config, "vocab_size"):  # HF
-        vocab_size = model.config.vocab_size
-    else:
-        raise Exception("config missing vocab size config")
+    emb_dim = get_emb_dim(model)
+    vocab_size = get_vocab_size(model)
 
     # get speculator
     if rank == 0:
@@ -159,8 +178,8 @@ def main(**kwargs):
         cfg.speculator_width,
         vocab_size,
         cfg.n_speculator_heads,
-        tie_weights=True,
-        scale_input=True,
+        tie_weights=cfg.speculator_tie_weights,
+        scale_input=cfg.speculator_scale_input,
     )
     speculator.reset_parameters()
 
@@ -171,19 +190,7 @@ def main(**kwargs):
         print(f"\n{time.time()} speculator has {total_params / 1e6} Million params\n")
 
     # get data loader
-    if rank == 0:
-        print(f"{time.time()} Constructing datasets...")
-    if not cfg.use_dummy_dataset:
-        if cfg.sharding_strategy == "tp":
-            train_loader = get_data_loader(
-                cfg, speculator_mesh.get_rank(), speculator_mesh.size(), postprocess=[]
-            )
-        else:
-            train_loader = get_data_loader(cfg, rank, world_size, postprocess=[])
-    else:
-        train_loader = get_dummy_loader(cfg, rank, world_size)
-    if rank == 0:
-        print(f"{time.time()} Datasets constructed!")
+    train_loader = get_training_data_loader(rank, cfg, world_size, speculator_mesh)
 
     # FSDP
     speculator = FSDP(
@@ -261,12 +268,7 @@ def main(**kwargs):
         # Final .1 scaling factor
         0.1
         # Cosine anneal from 1 to .1 over stage2_start_step steps
-        + 0.5
-        * (1 - 0.1)
-        * (
-            1
-            + math.cos(x / cfg.stage2_start_step * math.pi)
-        ),
+        + 0.5 * (1 - 0.1) * (1 + math.cos(x / cfg.stage2_start_step * math.pi)),
     )
     # Stage 2: warm up over first 2k or 5% of steps, whichever is smaller.
     # Then cosine anneal to 10% of stage 1's final LR.
