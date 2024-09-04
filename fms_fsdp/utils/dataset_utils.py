@@ -1163,12 +1163,11 @@ class ScalableShardDataset(_WrapperDataset):
                 self.data[-1].rank = self.logicals_owned[i]
                 self.data[-1].local_worldsize = 1
                 self.data[-1].datapath = self.datapath
-                self.data[-1].verbose = self.rank == 0
+                self.data[-1].setup()
                 if self.verbose:
                     logging.info(
                         f"Worker {self.rank} assembled logical shard {self.logicals_owned[i]}, {i+1} of {self.n_logicals}"
                     )
-            [d.setup() for d in self.data]
             self.n_docs_remaining = [d._len for d in self.data]
 
             self.generator = torch.Generator().manual_seed(self.rank)
@@ -1302,11 +1301,11 @@ class SamplingDataset(_WrapperDataset):
                 self.data[-1].rank = self.rank
                 self.data[-1].worldsize = self.worldsize
                 self.data[-1].local_worldsize = self.local_worldsize
+                self.data[-1].setup()
                 if self.verbose:
                     logging.info(
                         f"Worker {self.rank} assembled subdataset iterator for {d}, {i+1} of {len(self.datasets)}"
                     )
-            [d.setup() for d in self.data]
 
     def __iter__(self):
         self.setup()
