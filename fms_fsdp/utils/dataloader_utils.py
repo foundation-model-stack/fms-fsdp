@@ -95,12 +95,14 @@ def get_data_loader(cfg, rank, world_size):
         strip_tokens=set(droplist),
         min_length=3,
         seed=cfg.seed,
+        verbose=(rank == 0 and cfg.verbose_loaders),
     )
     # Add rescaling/resharding
     data = ScalableShardDataset(
         data,
         cfg.eos_token,
         n_logical_shards=cfg.logical_shards,
+        verbose=(rank == 0) and cfg.verbose_loaders,
     )
     # Add multi-dataset handling
     data = SamplingDataset(
@@ -109,7 +111,7 @@ def get_data_loader(cfg, rank, world_size):
         cfg.eos_token,
         datasets=datasets,
         weights=weights,
-        verbose=(rank == 0),
+        verbose=(rank == 0 and cfg.verbose_loaders),
     )
     # Wrap above dataset in packing logic to form constant-length lines.
     data = BufferDataset(
