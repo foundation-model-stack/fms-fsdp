@@ -118,6 +118,7 @@ def generate(
     return result
 
 
+# Stage 1 training
 def stage1_loss(
     cfg, model, speculator, base_model_input, input, loss_fn, ddp_stats, base_model_mesh
 ):
@@ -128,18 +129,23 @@ def stage1_loss(
     ...
     Args
     ----
+    cfg: train_config
+        Set of training parameters.
     model: nn.Module
         The frozen base model. Must return output logits AND corresponding embedding vectors.
     speculator: nn.Module
         The speculator to be trained. Takes as input sequence of embeddings and token indices,
         and return token prediction logits for each head.
     input: torch.IntTensor
-        The ground truth token indices.
+        The ground truth token indices. If using TP, this is per TP rank,
+        with 'base_model_input' containing all-gathered input across all TP ranks
     loss_fn: Callable
         Torch loss function comparing logits to indices i.e. CrossEntropyLoss()
     ddp_stats: torch.FloatTensor
         Aggregate stat tracking buffer.
         Entries are: grad norm, accumulation steps, head 1 loss, head 2 loss, etc.
+    base_model_mesh: torch.distributed.device_mesh.DeviceMesh
+       Device layout of the particiapting process group ranks
     ----
     Returns: scalar loss value, updated ddp stats, number of tokens in input
     """
@@ -165,6 +171,7 @@ def stage1_loss(
     return loss, ddp_stats, input.numel()
 
 
+# Stage 2 training: more heavyweight than stage 1; will take longer
 def stage2_loss(
     cfg, model, speculator, base_model_input, input, loss_fn, ddp_stats, base_model_mesh
 ):
@@ -178,8 +185,23 @@ def stage2_loss(
     ----
     cfg: train_config
         Set of training parameters. Used here for reshaping input batches.
+    model: nn.Module
+        The frozen base model. Must return output logits AND corresponding embedding vectors.
+    speculator: nn.Module
+        The speculator to be trained. Takes as input sequence of embeddings and token indices,
+        and return token prediction logits for each head.
+    input: torch.IntTensor
+        The ground truth token indices. If using TP, this is per TP rank,
+        with 'base_model_input' containing all-gathered input across all TP ranks
+    loss_fn: Callable
+        Torch loss function comparing logits to indices i.e. CrossEntropyLoss()
+    ddp_stats: torch.FloatTensor
+        Aggregate stat tracking buffer.
+        Entries are: grad norm, accumulation steps, head 1 loss, head 2 loss, etc.
+    base_model_mesh: torch.distributed.device_mesh.DeviceMesh
+       Device layout of the particiapting process group ranks
     ----
-    Other args and output are same as stage1_loss
+    Returns: scalar loss value, updated ddp stats, number of tokens in input
     """
     with torch.no_grad():
         grow_factor = cfg.stage2_batch_size // cfg.batch_size
@@ -285,6 +307,8 @@ def train_speculator(
         If resuming from checkpoint, resume token count from this value.
     profiler: optional[torch.profiler.profile]
         Optional torch profiler for performance benchmarking.
+    base_model_mesh: DeviceMesh
+       Device layout of the particiapting process group ranks
     """
     model.eval()
     speculator.train()

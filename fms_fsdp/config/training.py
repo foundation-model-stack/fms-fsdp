@@ -65,6 +65,8 @@ class train_config:
     model_path: str = "/path/to/model/"
     n_speculator_heads: int = 3
     speculator_width: int = 4096
+    speculator_tie_weights: bool = True
+    speculator_scale_input: bool = True
     stage2_start_step: int = 15000
     stage2_prompt_length: int = 64
     stage2_batch_size: int = 96

@@ -179,7 +179,7 @@ class Checkpointer:
         path="",
         reset_stepcount=False,
         strict=True,
-        **kwargs,
+        is_compiled=False,
     ):
         """
         Handle checkpoint loading for model/optimizer/dataloader from given path, according to arguments.
@@ -204,7 +204,7 @@ class Checkpointer:
             model_load_time = time.time()
             if os.path.isfile(load_path):
                 checkpoint_data = torch.load(load_path, map_location="cpu")
-                if "is_compiled" in kwargs.keys() and kwargs["is_compiled"] is True:
+                if is_compiled:
                     model._orig_mod.load_state_dict(
                         checkpoint_data.get("model_state"), strict=strict
                     )
@@ -309,6 +309,7 @@ class Checkpointer:
         self,
         step,
         model,
+        is_compiled=False,
         **kwargs,
     ):
         # Note: metadata kwargs cannot contain any of:
@@ -320,7 +321,7 @@ class Checkpointer:
             StateDictType.FULL_STATE_DICT,
             FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
         ):
-            if "is_compiled" in kwargs.keys() and kwargs["is_compiled"] is True:
+            if is_compiled:
                 model_state = model._orig_mod.state_dict()
             else:
                 model_state = model.state_dict()
