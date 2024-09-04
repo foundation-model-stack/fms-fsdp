@@ -26,7 +26,7 @@ class train_config:
     strip_tokens: str = ""
     logical_shards: int = 1024
     num_workers: int = 1
-    verbose_loaders: False
+    verbose_loaders: bool = False
 
     # fsdp policies
     sharding_strategy: str = "hsdp"
