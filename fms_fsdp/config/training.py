@@ -61,7 +61,7 @@ class train_config:
     use_torch_compile: bool = True
 
     # speculator training
-    model_arch: str = "llama"
+    model_arch: str = "embedllama"
     model_path: str = "/path/to/model/"
     n_speculator_heads: int = 3
     speculator_width: int = 4096
