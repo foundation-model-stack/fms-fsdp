@@ -906,6 +906,8 @@ class StreamingDocDataset(_StatefulDataset):
                             doc_counts[key] = int(row["documents"])
             else:
                 # Count file does not exist, touch every owned file for length
+                if self.verbose:
+                    logging.info("No metadata file detected, calculating lengths manually")
                 unique_shardfiles = set(shard for shard, frag in shardfrags)
                 doc_counts = {
                     shard: self.filehandler.length(os.path.join(datapath, shard))
