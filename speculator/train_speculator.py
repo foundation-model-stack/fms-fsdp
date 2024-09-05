@@ -8,7 +8,7 @@ import torch.optim as optim
 from fms.models import get_model
 from fms.models.llama import LLaMABlock
 from fms.utils import generation, tokenizers
-from fms_extras.models.speculator import MLPSpeculator # type: ignore
+from fms_extras.models.speculator import MLPSpeculator  # type: ignore
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
