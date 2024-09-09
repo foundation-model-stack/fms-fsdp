@@ -2,7 +2,7 @@ import math
 import os
 import time
 
-import fire
+import fire  # type: ignore
 import torch
 import torch.optim as optim
 from fms.models import get_model
