@@ -313,7 +313,6 @@ def train_speculator(
     model.eval()
     speculator.train()
     ddp_stats = torch.zeros(2 + speculator.n_predict).to(local_rank)
-    train_loss = 0
 
     start = time.time()
     loop_start = time.time()
