@@ -131,9 +131,10 @@ def main(**kwargs):
         base_model_mesh = None
         speculator_mesh = None
     else:
-        tp_size = 8
         base_model_mesh = dist.device_mesh.init_device_mesh(
-            "cuda", (world_size // tp_size, tp_size), mesh_dim_names=("dp", "tp")
+            "cuda",
+            (world_size // cfg.tp_size, cfg.tp_size),
+            mesh_dim_names=("dp", "tp"),
         )
         speculator_mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
         torch._C._distributed_c10d._register_process_group(

@@ -12,6 +12,8 @@
 
 - *sharding_strategy*: how to shard the model across process group: tp / fsdp / hsdp
 
+- *tp_size*: If loading base model using tensor parallel, no. of GPUs/ranks to split the model across 
+
 - *seq_length*: sequence length of the base model
 
 - *batch_size*: batch size for stage 1 training for aligning speculator to base model input behavior
