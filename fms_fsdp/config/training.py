@@ -62,7 +62,7 @@ class train_config:
 
     # speculator training
     tp_size: int = 8
-    model_arch: str = "embedllama"
+    model_arch: str = "llama"
     model_path: str = "/path/to/model/"
     n_speculator_heads: int = 3
     speculator_width: int = 4096

@@ -1,6 +1,6 @@
 ### Following parameters are relevant for speculator training: 
 
-- *model_arch*: architecture of the base model (one of: embedllama, embedmixtral, embedgpt_bigcode-- FMS implementations extending the base arch to also emit embedding vector together with the model output. See 'EmbedLLaMA' in train_spculator_utils.py)
+- *model_arch*: architecture of the base model (one of: llama, mixtral, gpt_bigcode)
 
 - *model_variant*: identifier with which a specific variant (e.g., 7b) is registered for the model architecture. See 'example model registrations' in train_spculator_utils.py. 
 
