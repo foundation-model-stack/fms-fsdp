@@ -432,8 +432,6 @@ def train_speculator(
         is_compiled=cfg.use_torch_compile,
     )
 
-    return train_loss
-
 
 class EmbedGPTBigCode(GPTBigCode):
     # Overrides the forward function of GPTBigCode to allow returning embedding vectors
