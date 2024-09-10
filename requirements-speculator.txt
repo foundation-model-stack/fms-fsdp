@@ -1,0 +1,2 @@
+-r requirements.txt
+fms-extras @ git+https://github.com/foundation-model-stack/fms-extras@main
