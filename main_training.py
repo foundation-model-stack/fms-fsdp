@@ -1,5 +1,9 @@
-import math
 import os
+
+if int(os.environ["RANK"]) == 0:
+    os.environ["TORCH_COMPILE_DEBUG"] = "1"
+
+import math
 
 import fire
 import torch
