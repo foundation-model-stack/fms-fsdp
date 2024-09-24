@@ -128,7 +128,7 @@ def main(**kwargs):
     if cfg.use_torch_compile:
         if rank == 0:
             print(f"--> enabling torch compile...")
-        model = torch.compile(model)
+        model = torch.compile(model, fullgraph=True)
 
     # Optimizer
     optimizer = optim.AdamW(
