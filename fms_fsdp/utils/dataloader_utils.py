@@ -22,7 +22,7 @@ def get_dummy_loader(cfg, rank, world_size):
 
         def __iter__(self):
             while True:
-                out = torch.randint(512, (self.size,))
+                out = torch.randint(10000, (self.size,))
                 yield out, out
 
     data = SteadyCounter(cfg.seq_length)
