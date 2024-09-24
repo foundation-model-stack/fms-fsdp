@@ -17,15 +17,20 @@ def get_dummy_loader(cfg, rank, world_size):
 
     class SteadyCounter(torch.utils.data.IterableDataset):
         # Spit out incremental counts of constant length l, modulo vocab size v
-        def __init__(self, size):
-            self.size = size
+        def __init__(self, l, v):
+            self.i = 0
+            self.l = l
+            self.v = v
 
         def __iter__(self):
             while True:
-                out = torch.randint(4096, (self.size,))
+                out = torch.IntTensor(
+                    [x % self.v for x in range(self.i, self.i + self.l)]
+                )
                 yield out, out
+                self.i += self.l
 
-    data = SteadyCounter(cfg.seq_length)
+    data = SteadyCounter(cfg.seq_length, cfg.vocab_size)
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
