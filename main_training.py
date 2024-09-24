@@ -109,9 +109,6 @@ def main(**kwargs):
         model.to_empty(device="cuda")
         model.reset_parameters()
 
-    if rank == 0:
-        print(model)
-
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
