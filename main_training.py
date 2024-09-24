@@ -53,9 +53,6 @@ class TinyModel(torch.nn.Module):
 
 def main(**kwargs):
 
-    print(torch._dynamo.config.skip_fsdp_hooks)
-    torch._dynamo.config.skip_fsdp_hooks = False
-
     # get configs
     cfg = config.train_config()
     update_config(cfg, **kwargs)
@@ -128,7 +125,7 @@ def main(**kwargs):
     if cfg.use_torch_compile:
         if rank == 0:
             print(f"--> enabling torch compile...")
-        model = torch.compile(model, fullgraph=True)
+        model = torch.compile(model)
 
     # Optimizer
     optimizer = optim.AdamW(
