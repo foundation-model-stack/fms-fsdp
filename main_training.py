@@ -77,8 +77,9 @@ def main(**kwargs):
     # get policy
     block = Block
     (
-        mp_policy,
         mesh,
+        reshard_after_forward,
+        mp_policy,
         apply_selective_ac,
     ) = get_policies(cfg, rank, world_size, block)
 
@@ -104,8 +105,8 @@ def main(**kwargs):
     # FSDP
     for module in model.modules():
         if isinstance(module, block):
-            fully_shard(module, mesh=mesh, mp_policy=mp_policy)
-    fully_shard(model, mesh=mesh, mp_policy=mp_policy)
+            fully_shard(module, mesh=mesh, reshard_after_forward=reshard_after_forward, mp_policy=mp_policy)
+    fully_shard(model, mesh=mesh, reshard_after_forward=reshard_after_forward, mp_policy=mp_policy)
     if rank == 0:
         print(model)
 

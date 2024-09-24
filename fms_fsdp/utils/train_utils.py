@@ -189,45 +189,33 @@ def setup_environ_flags():
 
 
 def get_policies(cfg, rank, world_size, block):
-    """Get policies for mixed precision, sharding mesh and ac."""
-
-    # mixed precision
-    verify_bfloat_support = (
-        torch.version.cuda
-        and torch.cuda.is_bf16_supported()
-        and packaging.version.parse(torch.version.cuda).release >= (11, 0)
-        and dist.is_nccl_available()
-        and nccl.version() >= (2, 10)
-    )
-    if cfg.mixed_precision:
-        bf16_ready = verify_bfloat_support
-        if bf16_ready:
-            mixed_precision_policy = bfSixteen
-            if rank == 0:
-                print(f"bFloat16 enabled for mixed precision - using bfSixteen policy")
-        else:
-            mixed_precision_policy = fpSixteen
-            if rank == 0:
-                print(f"FP16 enabled")
-    else:
-        mixed_precision_policy = None
-
-    if rank == 0:
-        print(f"Sharding strategy = {cfg.sharding_strategy}")
+    """Get policies for mesh, reshard_after_forward, mixed precision and ac."""
 
     # sharding mesh
     if cfg.sharding_strategy == "hsdp":
         mesh = init_device_mesh("cuda", (world_size // 8, 8), mesh_dim_names=("dp_rep", "dp_sha"))
     else:
         mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp",))
+    if rank == 0:
+        print(f"Sharding strategy = {cfg.sharding_strategy}")
+
+    # reshard after forward
+    reshard_after_forward = cfg.reshard_after_forward
+    if rank == 0:
+        print(f"Re-shard after forward = {cfg.reshard_after_forward}")
+
+    # mp policy
+    mixed_precision_policy = bfSixteen
+    if rank == 0:
+        print(f"bFloat16 enabled for mixed precision - using bfSixteen policy")
 
     # ac handler
     apply_selective_ac = partial(apply_fsdp_checkpointing, block=block)
 
-
     return (
-        mixed_precision_policy,
         mesh,
+        reshard_after_forward,
+        mixed_precision_policy,
         apply_selective_ac,
     )
 

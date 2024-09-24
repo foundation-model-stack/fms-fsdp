@@ -25,6 +25,7 @@ class train_config:
 
     # fsdp policies
     sharding_strategy: str = "hsdp"
+    reshard_after_forward: bool = True
     fsdp_activation_checkpointing: bool = False
     selective_checkpointing: Union[float, str] = 1  # percentage of blocks to apply ac
     mixed_precision: bool = True
