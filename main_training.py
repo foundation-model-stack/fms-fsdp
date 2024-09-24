@@ -8,6 +8,7 @@ import math
 import fire
 import torch
 import torch.optim as optim
+from fms.models.roberta import RoBERTa, RoBERTaBlock, RoBERTaConfig
 from torch import distributed as dist
 from torch.distributed._composable.fsdp import fully_shard
 from torch.optim.lr_scheduler import LambdaLR
@@ -76,7 +77,7 @@ def main(**kwargs):
     setup_environ_flags()
 
     # get policy
-    block = Block
+    block = RoBERTaBlock
     (
         mesh,
         reshard_after_forward,
@@ -85,7 +86,7 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, world_size, block)
 
     # get fms model
-    model = TinyModel()
+    model = RoBERTa(RoBERTaConfig(nlayers=2))
     if rank == 0:
         print(model)
 
