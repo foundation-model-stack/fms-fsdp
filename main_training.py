@@ -52,6 +52,10 @@ class TinyModel(torch.nn.Module):
 
 
 def main(**kwargs):
+
+    print(torch._dynamo.config.skip_fsdp_hooks)
+    torch._dynamo.config.skip_fsdp_hooks = False
+
     # get configs
     cfg = config.train_config()
     update_config(cfg, **kwargs)
