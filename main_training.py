@@ -9,6 +9,7 @@ import fire
 import torch
 import torch.optim as optim
 from fms.models.roberta import RoBERTa, RoBERTaBlock, RoBERTaConfig
+from fms.models.llama import LLaMA, LLaMABlock, LLaMAConfig
 from torch import distributed as dist
 from torch.distributed._composable.fsdp import fully_shard
 from torch.optim.lr_scheduler import LambdaLR
@@ -77,7 +78,7 @@ def main(**kwargs):
     setup_environ_flags()
 
     # get policy
-    block = RoBERTaBlock
+    block = LLaMABlock
     (
         mesh,
         reshard_after_forward,
@@ -86,7 +87,7 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, world_size, block)
 
     # get fms model
-    model = RoBERTa(RoBERTaConfig(nlayers=2))
+    model = LLaMA(LLaMAConfig(nlayers=2))
     if rank == 0:
         print(model)
 
@@ -115,6 +116,12 @@ def main(**kwargs):
     if cfg.low_cpu_fsdp:
         model.to_empty(device="cuda")
         model.reset_parameters()
+
+    # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
+    model.rot_emb.compute_freqs_cis(
+        torch.device("cuda", torch.cuda.current_device()),
+        model.config.max_expected_seq_len,
+    )
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
