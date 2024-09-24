@@ -87,7 +87,15 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, world_size, block)
 
     # get fms model
-    model = LLaMA(LLaMAConfig(nlayers=2))
+    model = LLaMA(LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=2048,
+            nheads=16,
+            kvheads=8,
+            nlayers=2,
+            hidden_grow_factor=3.5,
+            max_expected_seq_len=8192,
+        ))
     if rank == 0:
         print(model)
 
