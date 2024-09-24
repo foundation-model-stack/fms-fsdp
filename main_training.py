@@ -96,6 +96,7 @@ def main(**kwargs):
             hidden_grow_factor=3.5,
             max_expected_seq_len=8192,
         ))
+    model.reset_parameters()
     if rank == 0:
         print(model)
 
