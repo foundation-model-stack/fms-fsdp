@@ -55,6 +55,7 @@ class TinyModel(torch.nn.Module):
 
 
 def main(**kwargs):
+    torch._dynamo.config.skip_fsdp_hooks = False
 
     # get configs
     cfg = config.train_config()
@@ -140,7 +141,7 @@ def main(**kwargs):
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # explanation = torch._dynamo.explain(model)(torch.randint(10000, (2, cfg.seq_length)))
-    # if rank == 0:
+    # if rank == 0:oo
     #     print(explanation)
 
     # torch compile
