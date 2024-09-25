@@ -139,7 +139,8 @@ def main(**kwargs):
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     explanation = torch._dynamo.explain(model)(torch.randint(10000, (2, cfg.seq_length)))
-    print(explanation)
+    if rank == 0:
+        print(explanation)
 
     # torch compile
     if cfg.use_torch_compile:
