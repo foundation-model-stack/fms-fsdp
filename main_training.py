@@ -92,7 +92,7 @@ def main(**kwargs):
             emb_dim=2048,
             nheads=16,
             kvheads=8,
-            nlayers=2,
+            nlayers=32,
             hidden_grow_factor=3.5,
             max_expected_seq_len=8192,
         ))
