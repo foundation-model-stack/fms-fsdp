@@ -138,6 +138,9 @@ def main(**kwargs):
             print(f"--> applying FSDP activation checkpointing...")
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
+    explanation = torch._dynamo.explain(model)(torch.randint(10000, (2, cfg.seq_length)))
+    print(explanation)
+
     # torch compile
     if cfg.use_torch_compile:
         if rank == 0:
