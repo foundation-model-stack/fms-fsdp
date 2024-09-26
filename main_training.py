@@ -56,17 +56,17 @@ class TinyModel(torch.nn.Module):
 
 def main(**kwargs):
     torch._dynamo.config.skip_fsdp_hooks = False
-    # torch._dynamo.config.compiled_autograd = True
-    # torch._dynamo.config.inline_inbuilt_nn_modules = True
-    # torch._functorch.config.enable_autograd_cache = False
-    # torch._functorch.config.recompute_views = True
-    # torch._inductor.config.force_disable_caches = True
+    torch._dynamo.config.compiled_autograd = True
+    torch._dynamo.config.inline_inbuilt_nn_modules = True
+    torch._functorch.config.enable_autograd_cache = False
+    torch._functorch.config.recompute_views = True
+    torch._inductor.config.force_disable_caches = True
     torch._inductor.config.reorder_for_compute_comm_overlap = True
-    # torch._inductor.config.reorder_for_compute_comm_overlap_passes = [
-    #             "sink_waits",
-    #             "raise_comms",
-    #             "reorder_compute_for_overlap",
-    #         ]
+    torch._inductor.config.reorder_for_compute_comm_overlap_passes = [
+                "sink_waits",
+                "raise_comms",
+                "reorder_compute_for_overlap",
+            ]
 
     # get configs
     cfg = config.train_config()
