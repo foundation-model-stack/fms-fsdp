@@ -55,7 +55,8 @@ class TinyModel(torch.nn.Module):
 
 
 def main(**kwargs):
-    # torch._dynamo.config.skip_fsdp_hooks = False
+    torch._dynamo.config.skip_fsdp_hooks = False
+    torch._dynamo.config.compiled_autograd = True
 
     # get configs
     cfg = config.train_config()
