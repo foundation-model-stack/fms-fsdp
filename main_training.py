@@ -159,9 +159,8 @@ def main(**kwargs):
 
 
 
-    input, label = torch.randint(10000, (2, 4096))
-    input = input.to(local_rank)
-    label = label.to(local_rank)
+    input = torch.randint(10000, (2, 4096)).to(local_rank)
+    label = torch.randint(10000, (2, 4096)).to(local_rank)
     output = model(input)
     ce_loss = torch.nn.CrossEntropyLoss()
     loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
