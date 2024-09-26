@@ -57,6 +57,16 @@ class TinyModel(torch.nn.Module):
 def main(**kwargs):
     torch._dynamo.config.skip_fsdp_hooks = False
     # torch._dynamo.config.compiled_autograd = True
+    # torch._dynamo.config.inline_inbuilt_nn_modules = True
+    # torch._functorch.config.enable_autograd_cache = False
+    # torch._functorch.config.recompute_views = True
+    # torch._inductor.config.force_disable_caches = True
+    # torch._inductor.config.reorder_for_compute_comm_overlap = True
+    # torch._inductor.config.reorder_for_compute_comm_overlap_passes = [
+    #             "sink_waits",
+    #             "raise_comms",
+    #             "reorder_compute_for_overlap",
+    #         ]
 
     # get configs
     cfg = config.train_config()
@@ -146,12 +156,21 @@ def main(**kwargs):
         model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
     )
 
+
+
+
     input, label = torch.randint(10000, (2, 4096))
+    input = input.to(local_rank)
+    label = label.to(local_rank)
     output = model(input)
     ce_loss = torch.nn.CrossEntropyLoss()
     loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
     loss.backward()
     optimizer.step()
+
+
+
+
 
     # torch compile
     if cfg.use_torch_compile:
