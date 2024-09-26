@@ -56,7 +56,7 @@ class TinyModel(torch.nn.Module):
 
 def main(**kwargs):
     torch._dynamo.config.skip_fsdp_hooks = False
-    torch._dynamo.config.compiled_autograd = True
+    # torch._dynamo.config.compiled_autograd = True
 
     # get configs
     cfg = config.train_config()
@@ -141,20 +141,23 @@ def main(**kwargs):
             print(f"--> applying FSDP activation checkpointing...")
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
-    # explanation = torch._dynamo.explain(model)(torch.randint(10000, (2, cfg.seq_length)))
-    # if rank == 0:oo
-    #     print(explanation)
+    # Optimizer
+    optimizer = optim.AdamW(
+        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+    )
+
+    input, label = torch.randint(10000, (2, 4096))
+    output = model(input)
+    ce_loss = torch.nn.CrossEntropyLoss()
+    loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+    loss.backward()
+    optimizer.step()
 
     # torch compile
     if cfg.use_torch_compile:
         if rank == 0:
             print(f"--> enabling torch compile...")
-        model = torch.compile(model, backend="aot_eager")
-
-    # Optimizer
-    optimizer = optim.AdamW(
-        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
-    )
+        model = torch.compile(model)
 
     # optionally load from checkpoint (when continue pretraining)
     checkpointer = Checkpointer(
