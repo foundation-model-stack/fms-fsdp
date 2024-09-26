@@ -117,8 +117,8 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
-    if model_variant == "llama2_70b":
-        llama_config = LLaMAConfig(
+    elif model_variant == "llama2_70b":
+        config_data = LLaMAConfig(
             emb_dim=8192,
             multiple_of=4096,
             nheads=64,
@@ -127,7 +127,7 @@ def get_model_config(model_variant):
             hidden_grow_factor=28672 / 8192,
         )
     elif model_variant == "llama2_34b":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             emb_dim=8192,
             nheads=64,
             kvheads=8,
@@ -137,19 +137,19 @@ def get_model_config(model_variant):
             rope_theta=1000000.0,
         )
     elif model_variant == "llama2_13b":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             emb_dim=5120,
             nheads=40,
             nlayers=40,
             hidden_grow_factor=13824 / 5120,
         )
     elif model_variant == "llama2_7b":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             hidden_grow_factor=11008 / 4096,
             kvheads=32,
         )
     elif model_variant == "llama2_1.4b":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             emb_dim=2048,
             nheads=16,
             nlayers=24,
@@ -157,7 +157,7 @@ def get_model_config(model_variant):
             kvheads=4,
         )
     elif model_variant == "llama3_8b":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=4096,
             nheads=32,
@@ -168,7 +168,7 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
     elif model_variant == "llama3_8b_4k":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=4096,
             nheads=32,
@@ -179,7 +179,7 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
     elif model_variant == "llama3_1.8b":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=2048,
             nheads=16,
@@ -190,7 +190,7 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
     elif model_variant == "llama3_1.8b_4k":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=2048,
             nheads=16,
@@ -201,7 +201,7 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
     elif model_variant == "llama3_3.2b":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=3072,
             nheads=24,
@@ -212,7 +212,7 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
     elif model_variant == "llama3_3.2b_4k":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=3072,
             nheads=24,
@@ -223,7 +223,7 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
     elif model_variant == "llama3_70b":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=8192,
             nheads=64,
@@ -234,7 +234,7 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
     elif model_variant == "llama3_70b_4k":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=8192,
             nheads=64,
@@ -245,7 +245,7 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
     elif model_variant == "llama3_194m_4k":
-        llama_config = LLaMAConfig(
+        config_data = LLaMAConfig(
             src_vocab_size=128256,
             emb_dim=1024,
             nheads=8,
