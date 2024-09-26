@@ -116,12 +116,6 @@ def main(**kwargs):
     if rank == 0:
         print("Datasets constructed!")
 
-    # torch compile
-    if cfg.use_torch_compile:
-        if rank == 0:
-            print(f"--> enabling torch compile...")
-        model = torch.compile(model)
-
     # FSDP
     for module in model.modules():
         if isinstance(module, block):
@@ -147,8 +141,14 @@ def main(**kwargs):
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # explanation = torch._dynamo.explain(model)(torch.randint(10000, (2, cfg.seq_length)))
-    # if rank == 0:
+    # if rank == 0:oo
     #     print(explanation)
+
+    # torch compile
+    if cfg.use_torch_compile:
+        if rank == 0:
+            print(f"--> enabling torch compile...")
+        model = torch.compile(model)
 
     # Optimizer
     optimizer = optim.AdamW(
