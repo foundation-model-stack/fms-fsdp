@@ -2,7 +2,7 @@ import os
 
 if int(os.environ["RANK"]) == 0:
     os.environ["TORCH_COMPILE_DEBUG"] = "1"
-    os.environ["TORCH_LOGS"] = "graph_breaks"
+    os.environ["TORCH_LOGS"] = "graph_breaks,aot_graphs"
 
 import math
 
