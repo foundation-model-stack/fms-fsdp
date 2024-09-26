@@ -61,7 +61,7 @@ def main(**kwargs):
     # torch._functorch.config.enable_autograd_cache = False
     # torch._functorch.config.recompute_views = True
     # torch._inductor.config.force_disable_caches = True
-    # torch._inductor.config.reorder_for_compute_comm_overlap = True
+    torch._inductor.config.reorder_for_compute_comm_overlap = True
     # torch._inductor.config.reorder_for_compute_comm_overlap_passes = [
     #             "sink_waits",
     #             "raise_comms",
