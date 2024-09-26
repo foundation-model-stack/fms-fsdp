@@ -149,7 +149,7 @@ def main(**kwargs):
     if cfg.use_torch_compile:
         if rank == 0:
             print(f"--> enabling torch compile...")
-        model = torch.compile(model)
+        model = torch.compile(model, backend="aot_eager")
 
     # Optimizer
     optimizer = optim.AdamW(
