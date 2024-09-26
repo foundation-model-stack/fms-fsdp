@@ -175,7 +175,7 @@ def main(**kwargs):
     if cfg.use_torch_compile:
         if rank == 0:
             print(f"--> enabling torch compile...")
-        model = torch.compile(model, backend="aot_eager")
+        model = torch.compile(model)
 
     # optionally load from checkpoint (when continue pretraining)
     checkpointer = Checkpointer(
