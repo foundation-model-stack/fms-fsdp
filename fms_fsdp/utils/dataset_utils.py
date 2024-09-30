@@ -387,8 +387,6 @@ class ParquetHandler(_ShardFileHandler):
         return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
 
     def length(self, path: str):
-        print(path, flush=True)
-        time.sleep(1)
         return pq.read_table(path, columns=[]).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
