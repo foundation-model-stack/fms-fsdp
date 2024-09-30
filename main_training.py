@@ -177,6 +177,7 @@ def main(**kwargs):
             print(f"--> enabling torch compile...")
         model = torch.compile(model)
 
+
     # optionally load from checkpoint (when continue pretraining)
     checkpointer = Checkpointer(
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
