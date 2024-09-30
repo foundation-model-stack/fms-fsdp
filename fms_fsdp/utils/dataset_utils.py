@@ -387,7 +387,7 @@ class ParquetHandler(_ShardFileHandler):
         return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
 
     def length(self, path: str):
-        return pq.read_table(path, columns=[]).num_rows
+        return pq.read_pandas(path, columns=[]).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
         doc = self.tokenizer(str(reader[index]))["input_ids"]
