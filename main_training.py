@@ -132,7 +132,7 @@ def main(**kwargs):
 
     # LR schedule
     if cfg.training_stage == "annealing":
-        schedule = lambda x: math.exp(-7 * x / cfg.num_steps)
+        schedule = lambda x: math.exp(-5 * x / cfg.num_steps)
     else:
         warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
