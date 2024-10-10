@@ -39,6 +39,8 @@ def get_model_config(model_variant):
             kvheads=8,
             nlayers=48,
             hidden_grow_factor=22016 / 8192,
+            max_expected_seq_len=16384,
+            rope_theta=1000000.0,
         )
     elif model_variant == "llama2_13b":
         llama_config = LLaMAConfig(
@@ -48,12 +50,17 @@ def get_model_config(model_variant):
             hidden_grow_factor=13824 / 5120,
         )
     elif model_variant == "llama2_7b":
-        llama_config = LLaMAConfig()
+        llama_config = LLaMAConfig(
+            hidden_grow_factor=11008 / 4096,
+            kvheads=32,
+        )
     elif model_variant == "llama2_1.4b":
         llama_config = LLaMAConfig(
             emb_dim=2048,
             nheads=16,
             nlayers=24,
+            hidden_grow_factor=3,
+            kvheads=4,
         )
     elif model_variant == "llama3_8b":
         llama_config = LLaMAConfig(
@@ -64,6 +71,7 @@ def get_model_config(model_variant):
             nlayers=32,
             hidden_grow_factor=3.5,
             max_expected_seq_len=8192,
+            rope_theta=500000.0,
         )
     elif model_variant == "llama3_8b_4k":
         llama_config = LLaMAConfig(
@@ -74,6 +82,7 @@ def get_model_config(model_variant):
             nlayers=32,
             hidden_grow_factor=3.5,
             max_expected_seq_len=4096,
+            rope_theta=500000.0,
         )
     elif model_variant == "llama3_1.8b":
         llama_config = LLaMAConfig(
@@ -84,6 +93,7 @@ def get_model_config(model_variant):
             nlayers=24,
             hidden_grow_factor=3.5,
             max_expected_seq_len=8192,
+            rope_theta=500000.0,
         )
     elif model_variant == "llama3_1.8b_4k":
         llama_config = LLaMAConfig(
@@ -94,6 +104,29 @@ def get_model_config(model_variant):
             nlayers=24,
             hidden_grow_factor=3.5,
             max_expected_seq_len=4096,
+            rope_theta=500000.0,
+        )
+    elif model_variant == "llama3_3.2b":
+        llama_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=3072,
+            nheads=24,
+            kvheads=8,
+            nlayers=24,
+            hidden_grow_factor=8 / 3,
+            max_expected_seq_len=8192,
+            rope_theta=500000.0,
+        )
+    elif model_variant == "llama3_3.2b_4k":
+        llama_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=3072,
+            nheads=24,
+            kvheads=8,
+            nlayers=24,
+            hidden_grow_factor=8 / 3,
+            max_expected_seq_len=4096,
+            rope_theta=500000.0,
         )
     elif model_variant == "llama3_70b":
         llama_config = LLaMAConfig(
@@ -104,6 +137,7 @@ def get_model_config(model_variant):
             nlayers=80,
             hidden_grow_factor=3.5,
             max_expected_seq_len=8192,
+            rope_theta=500000.0,
         )
     elif model_variant == "llama3_70b_4k":
         llama_config = LLaMAConfig(
@@ -114,6 +148,16 @@ def get_model_config(model_variant):
             nlayers=80,
             hidden_grow_factor=3.5,
             max_expected_seq_len=4096,
+            rope_theta=500000.0,
+        )
+    elif model_variant == "llama3_194m_4k":
+        llama_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=1024,
+            nheads=8,
+            nlayers=10,
+            max_expected_seq_len=4096,
+            rope_theta=500000.0,
         )
     else:
         raise ValueError(f"model variant {model_variant} not supported.")

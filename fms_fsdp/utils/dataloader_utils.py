@@ -1,13 +1,34 @@
 import torch
 
 from fms_fsdp.utils.dataset_utils import (
-    Buffer_Dataset,
-    Checkpoint_Dataset,
-    Preload_Buffer_Dataset,
-    Preprocess_Dataset,
-    Sampling_Dataset,
-    Scalable_Shard_Dataset,
+    ArrowHandler,
+    BufferDataset,
+    CheckpointDataset,
+    ParquetHandler,
+    PreloadBufferDataset,
+    PreprocessDataset,
+    SamplingDataset,
+    ScalableShardDataset,
+    StreamingDocDataset,
 )
+
+
+_handler_map = {
+    "arrow": ArrowHandler,
+    "hf_parquet": ParquetHandler,
+}
+
+
+def causal_lm(data_seq, prompt_len=1):
+    """
+    Perform causal language modeling by right-shifting the input sequence.
+    Sets first prompt_len tokens to be ignored by the loss.
+    """
+    data_seq = torch.tensor(data_seq, dtype=torch.int)
+    t = data_seq.clone()[1:]
+    data_seq = data_seq[:-1]
+    t[:prompt_len] = -100
+    return data_seq, t
 
 
 def get_dummy_loader(cfg, rank, world_size):
@@ -34,7 +55,7 @@ def get_dummy_loader(cfg, rank, world_size):
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
-def get_data_loader(cfg, rank, world_size):
+def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     """
     Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training.
     Assumes underlying data is sequences of integer values.
@@ -47,20 +68,12 @@ def get_data_loader(cfg, rank, world_size):
         Rank of current distributed worker. Used for handling dataset sharding logic.
     world_size : int
         Number of distributed workers. Used for handling dataset sharding logic.
+    postprocess : List[Callable]
+        Any task-specific postprocessing to apply before handing over data. Steps will apply in
+        the order provided by the user. For CLM training, use postprocess=[causal_lm].
     """
 
     datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
-
-    def causal_lm(data_seq, prompt_len=0):
-        """
-        Perform causal language modeling by right-shifting the input sequence.
-        Sets first prompt_len tokens to be ignored by the loss.
-        """
-        data_seq = torch.IntTensor(data_seq)
-        t = data_seq.clone()[1:]
-        data_seq = data_seq[:-1]
-        t[:prompt_len] = -100
-        return data_seq, t
 
     # Base streaming dataset. Returns doc chunks in sequence.
     # Implements dataset sampling and rescalability.
@@ -68,42 +81,67 @@ def get_data_loader(cfg, rank, world_size):
         int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip()) > 0
     ]
     droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
-    data = Sampling_Dataset(
+    assert (
+        cfg.file_type in _handler_map
+    ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
+    if cfg.file_type == "hf_parquet":
+        filehandler = ParquetHandler(cfg.tokenizer_path, cfg.col_name)
+    else:
+        filehandler = _handler_map[cfg.file_type](cfg.col_name)
+    # Base reader layer
+    data = StreamingDocDataset(
         cfg.data_path,
-        Scalable_Shard_Dataset,
         rank,
         world_size,
+        filehandler,
         cfg.eos_token,
         bos_token=cfg.bos_token,
         strip_tokens=set(droplist),
         min_length=3,
-        datasets=datasets,
-        weights=weights,
         seed=cfg.seed,
-        verbose=(rank == 0),
+    )
+    # Add rescaling/resharding
+    data = ScalableShardDataset(
+        data,
+        cfg.eos_token,
         n_logical_shards=cfg.logical_shards,
     )
-    # Wrap above dataset in packing logic to form constant-length lines.
-    data = Buffer_Dataset(
+    # Add multi-dataset handling
+    data = SamplingDataset(
+        cfg.data_path,
         data,
-        cfg.seq_length + 1,
+        cfg.eos_token,
+        datasets=datasets,
+        weights=weights,
+        verbose=(rank == 0),
+    )
+    # Wrap above dataset in packing logic to form constant-length lines.
+    data = BufferDataset(
+        data,
+        cfg.seq_length if causal_lm not in postprocess else cfg.seq_length + 1,
         bos_token=cfg.bol_token,
         eos_token=cfg.eol_token,
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
-    data = Preload_Buffer_Dataset(data, 10000)
-    # Split line into input and target for the CLM task.
-    data = Preprocess_Dataset(data, causal_lm)
+    data = PreloadBufferDataset(data, 10000)
+
+    # Apply desired postprocessing steps in sequence
+    data = PreprocessDataset(data, torch.IntTensor)
+    for p in postprocess:
+        data = PreprocessDataset(data, p)
+
     # Enable auto-saving
-    data = Checkpoint_Dataset(
+    data = CheckpointDataset(
         data,
-        cfg.ckpt_load_path,
+        cfg.ckpt_load_path if cfg.resuming_dataset else cfg.ckpt_save_path,
         cfg.checkpoint_interval,
         cfg.batch_size,
         cfg.ckpt_save_path,
     )
-    return torch.utils.data.DataLoader(data, num_workers=1, batch_size=cfg.batch_size)
+    return torch.utils.data.DataLoader(
+        data, num_workers=cfg.num_workers, batch_size=cfg.batch_size
+    )
 
 
 def parse_data_args(datas, weights):
