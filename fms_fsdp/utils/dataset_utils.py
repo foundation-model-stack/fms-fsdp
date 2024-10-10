@@ -511,7 +511,7 @@ class CheckpointDataset(_WrapperDataset):
                 )
             return ""
         # Check latest path, using ckp naming syntax
-        latest = get_latest(path, key= lambda path: int(path.split("_")[-2]))
+        latest = get_latest(path, key=lambda path: int(path.split("_")[-2]))
         if verbose:
             self.report(f"Checkpoint detected at {latest}")
         # If item is not a folder, exit early
