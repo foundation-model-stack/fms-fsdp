@@ -184,7 +184,7 @@ def setup():
 
 def setup_environ_flags():
     os.environ["TORCH_SHOW_CPP_STACKTRACES"] = str(1)
-    os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
+    os.environ["TORCH_NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
 
 def get_mixed_precision_policy(cfg, rank):
