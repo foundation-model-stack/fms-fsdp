@@ -32,7 +32,7 @@ The following distributed dataloaders are designed around 3 main principles:
     rescaling (i.e. counters, RNG states), and `reshard_params`, which are lists that can be 
     re-distributed over workers (i.e. buffers).
 
-Our loaders obey the following type heirarchy: 
+Our loaders obey the following type hierarchy: 
 torch.data.IterableDataset -> _StatefulDataset -> _WrapperDataset. 
 `_StatefulDataset` implements state and checkpointing logic. A `_WrapperDataset` holds a 
 single `_StatefulDataset` and iterates via calling its wrapped dataset any number of times, 
@@ -510,8 +510,8 @@ class CheckpointDataset(_WrapperDataset):
                     f"  Dataset: No valid checkpoint detected at {path}, dataset starting from scratch."
                 )
             return ""
-        # Check latest path
-        latest = os.path.join(path, get_latest(path))
+        # Check latest path, using ckp naming syntax
+        latest = get_latest(path, key= lambda path: int(path.split("_")[-2]))
         if verbose:
             self.report(f"Checkpoint detected at {latest}")
         # If item is not a folder, exit early
