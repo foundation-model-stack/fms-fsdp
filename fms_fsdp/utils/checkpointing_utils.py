@@ -128,7 +128,7 @@ class Checkpointer:
             ckp_to_remove = Path(
                 get_oldest(self.ckp_path, qualifier=lambda x: "tmp" in x)
             )
-            if os.path.is_file(ckp_to_remove):
+            if os.path.isfile(ckp_to_remove):
                 ckp_to_remove.unlink()
             else:
                 shutil.rmtree(ckp_to_remove)
