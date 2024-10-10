@@ -440,11 +440,7 @@ class EmbedGPTBigCode(GPTBigCode):
         x: torch.LongTensor,
         mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_value_states: Optional[
-            Tuple[
-                torch.FloatTensor,
-            ]
-        ] = None,
+        past_key_value_states: Optional[Tuple[torch.FloatTensor,]] = None,
         use_cache: bool = False,
         attn_algorithm: Optional[str] = None,
         include_embeds: bool = False,
