@@ -25,12 +25,8 @@ def get_latest(targdir, qualifier=lambda x: True):
     If directory is empty or nonexistent or no items qualify, return None."""
     if os.path.exists(targdir) and len(os.listdir(targdir)) > 0:
         latest = max(
-            [
-                os.path.join(targdir, x)
-                for x in os.listdir(targdir)
-                if qualifier(os.path.join(targdir, x))
-            ],
-            key=lambda path: int(path.split("/")[-1].split("_")[1]),
+            [x for x in os.listdir(targdir) if qualifier(os.path.join(targdir, x))],
+            key=lambda path: int(path.split("_")[1]),
         )
         return os.path.join(targdir, latest)
     return None
@@ -41,12 +37,8 @@ def get_oldest(targdir, qualifier=lambda x: True):
     If directory is empty or nonexistent or no items qualify, return None."""
     if os.path.exists(targdir) and len(os.listdir(targdir)) > 0:
         oldest = min(
-            [
-                os.path.join(targdir, x)
-                for x in os.listdir(targdir)
-                if qualifier(os.path.join(targdir, x))
-            ],
-            key=os.path.getctime,
+            [x for x in os.listdir(targdir) if qualifier(os.path.join(targdir, x))],
+            key=lambda path: os.path.getctime(os.path.join(targdir, path)),
         )
         return os.path.join(targdir, oldest)
     return None
