@@ -1,7 +1,7 @@
 import os
 import re
 import time
-from typing import Any, Callable, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any, Callable, List, MutableMapping, Optional, Tuple, Union
 
 import torch
 import torch.distributed as dist
@@ -437,11 +437,12 @@ class EmbedGPTBigCode(GPTBigCode):
     # Overrides the forward function of GPTBigCode to allow returning embedding vectors
     def forward(
         self,
-        x: torch.LongTensor,
+        x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value_states: Optional[Tuple[torch.FloatTensor,]] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        past_key_value_states: Optional[List[Tuple[torch.Tensor,]]] = None,
         use_cache: bool = False,
+        only_last_token: bool = False,
         attn_algorithm: Optional[str] = None,
         include_embeds: bool = False,
     ):
