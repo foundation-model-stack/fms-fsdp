@@ -20,9 +20,14 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import StateDictType
 
 
-def get_latest(targdir, qualifier=lambda x: True):
-    """Fetch the latest file or folder written to target directory, subject to name passing the qualifier fn.
-    If directory is empty or nonexistent or no items qualify, return None."""
+def get_latest(targdir, qualifier=lambda x: True, key=os.path.getctime):
+    """
+    Fetch the full path of the latest file or folder written to target directory,
+    subject to name passing the qualifier fn.
+    Optional key fn can be used for custom sorting.
+    Both functions take full path arguments.
+    If directory is empty or nonexistent or no items qualify, return None.
+    """
     if os.path.exists(targdir) and len(os.listdir(targdir)) > 0:
         latest = max(
             [
@@ -30,15 +35,20 @@ def get_latest(targdir, qualifier=lambda x: True):
                 for x in os.listdir(targdir)
                 if qualifier(os.path.join(targdir, x))
             ],
-            key=lambda path: int(path.split("/")[-1].split("_")[1]),
+            key=key,
         )
-        return os.path.join(targdir, latest)
+        return latest
     return None
 
 
-def get_oldest(targdir, qualifier=lambda x: True):
-    """Fetch the oldest file or folder written to target directory, subject to name passing the qualifier fn.
-    If directory is empty or nonexistent or no items qualify, return None."""
+def get_oldest(targdir, qualifier=lambda x: True, key=os.path.getctime):
+    """
+    Fetch the full path of the oldest file or folder written to target directory,
+    subject to name passing the qualifier fn.
+    Optional key fn can be used for custom sorting.
+    Both functions take full path arguments.
+    If directory is empty or nonexistent or no items qualify, return None.
+    """
     if os.path.exists(targdir) and len(os.listdir(targdir)) > 0:
         oldest = min(
             [
@@ -46,9 +56,9 @@ def get_oldest(targdir, qualifier=lambda x: True):
                 for x in os.listdir(targdir)
                 if qualifier(os.path.join(targdir, x))
             ],
-            key=os.path.getctime,
+            key=key,
         )
-        return os.path.join(targdir, oldest)
+        return oldest
     return None
 
 
@@ -118,7 +128,7 @@ class Checkpointer:
             ckp_to_remove = Path(
                 get_oldest(self.ckp_path, qualifier=lambda x: "tmp" in x)
             )
-            if os.path.is_file(ckp_to_remove):
+            if os.path.isfile(ckp_to_remove):
                 ckp_to_remove.unlink()
             else:
                 shutil.rmtree(ckp_to_remove)
