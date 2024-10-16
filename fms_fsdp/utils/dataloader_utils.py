@@ -24,7 +24,8 @@ def causal_lm(data_seq, prompt_len=1):
     Perform causal language modeling by right-shifting the input sequence.
     Sets first prompt_len tokens to be ignored by the loss.
     """
-    data_seq = torch.tensor(data_seq, dtype=torch.int)
+    #data_seq = torch.tensor(data_seq, dtype=torch.int)
+    data_seq = data_seq.int()
     t = data_seq.clone()[1:]
     data_seq = data_seq[:-1]
     t[:prompt_len] = -100
@@ -148,7 +149,7 @@ def parse_data_args(datas, weights):
     # Convert csv inputs into corresponding lists of values
     def splitstrip(x):
         if isinstance(x, str):
-            return [item.strip() for item in x.split(",")]
+            return [item.strip() for item in x.split(",")] if x else []
         elif isinstance(x, (list, tuple)):
             return list(x)
         elif isinstance(x, (int, float, complex)):

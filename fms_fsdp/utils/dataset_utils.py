@@ -379,18 +379,67 @@ class ParquetHandler(_ShardFileHandler):
     def __init__(self, tokenizer_path: str, col_name: str = "text"):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.col_name = col_name
+        self.chunk_size = 8192 # 10*4096*1024
 
     def is_legal(self, filepath: str):
         return "parquet" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
-        return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
+        #return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
+        return pq.read_pandas(path, columns=[self.col_name], use_threads=True, memory_map=True)[self.col_name]
 
     def length(self, path: str):
-        return pq.read_pandas(path, columns=[]).num_rows
+        #return pq.read_pandas(path, columns=[]).num_rows
+        return pq.read_table(path, columns=[]).num_rows
+
+    def split_text(self, text: str, chunk_size: int) -> str:
+        """
+        Split text into chunks for languages with spaces between words.
+        For input/output, please refer to the split_text() function
+        """
+        index = 0
+        while index < len(text):
+            # last chunk:
+            if len(text) - index < chunk_size:
+                yield text[index:]
+                break
+
+            if text[index + chunk_size - 1] != " ":
+                """
+                if the last character of the chunk is not a space,
+                search index of the last space in the chunk:
+                """
+                last_space_index = text.rfind(" ", index, index + chunk_size)
+
+                if last_space_index != -1:  # s[last_space_index] = ' '
+                    # If found, return the chunk up to and include such space:
+                    yield text[index : last_space_index + 1]
+                    index = last_space_index + 1
+                else:
+                    # If not, force cutting up to chunk_size:
+                    yield text[index : index + chunk_size]
+                    index += chunk_size
+            else:
+                yield text[index : index + chunk_size]
+                index += chunk_size
 
     def get(self, reader, index: int, drop_tokens: Set):
-        doc = self.tokenizer(str(reader[index]))["input_ids"]
+        #doc = self.tokenizer(str(reader[index]))["input_ids"]
+        doc_content=str(reader[index].as_py())
+        doc_length = len(doc_content)
+        if self.chunk_size > 0 and doc_length > self.chunk_size:
+            #print(len(doc_content),flush=True)
+            token_line = []
+            doc_len_so_far = 0
+            for chunk_idx, chunk in enumerate(self.split_text(doc_content, self.chunk_size)):
+                #print("tokenizing",chunk_idx,chunk)
+                #token_line.extend(self.tokenizer(chunk)["input_ids"])
+                token_line.extend(self.tokenizer.encode(chunk))
+                doc_len_so_far += len(chunk)
+        else:
+            #print("tokenizing",doc_content)
+            token_line = self.tokenizer.encode(doc_content)
+        doc = token_line
         if len(doc) > 0:
             if doc[0] in drop_tokens:
                 doc = doc[1:]
@@ -512,6 +561,7 @@ class CheckpointDataset(_WrapperDataset):
             return ""
         # Check latest path, using ckp naming syntax
         latest = get_latest(path, key=lambda path: int(path.split("_")[-2]))
+        #latest = os.path.join(path, get_latest(path))
         if verbose:
             self.report(f"Checkpoint detected at {latest}")
         # If item is not a folder, exit early
@@ -867,7 +917,7 @@ class StreamingDocDataset(_StatefulDataset):
             # listdir, assemble shardfraglist (ind -> shard, frag)
             shards = [
                 os.path.join(root, name)[len(datapath) + 1 :]
-                for root, dirs, files in os.walk(datapath, topdown=False)
+                for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True)
                 for name in files
                 if self.filehandler.is_legal(os.path.join(root, name))
             ]
@@ -898,7 +948,7 @@ class StreamingDocDataset(_StatefulDataset):
                     reader = csv.DictReader(csvfile)
                     for row in reader:
                         fullpath = row["dataset/filename"]
-                        prefix = fullpath.find("/" + dataset) + 1
+                        prefix = fullpath.rfind("/" + dataset + "/") + 1
                         if prefix > 0:
                             key = fullpath[prefix + len(dataset) + 1 :]
                             doc_counts[key] = int(row["documents"])
@@ -914,7 +964,12 @@ class StreamingDocDataset(_StatefulDataset):
             ndocs = -1
             docset = {}  # shardid -> (min docid, max docid)
             for i, (shard, frag) in enumerate(shardfrags):
-                ndocs = doc_counts[shard]
+                #ndocs = doc_counts[shard]
+                try:
+                    ndocs = doc_counts[shard]
+                except:
+                    if self.rank==0: print("Alexei Not found", self.dataset, shard)
+                    continue
                 doc_start = (ndocs * frag) // self.worldsize
                 doc_end = (
                     ndocs * frag + ndocs
@@ -1268,7 +1323,7 @@ class SamplingDataset(_WrapperDataset):
         self.verbose = verbose
         self.datasets = (
             datasets
-            if datasets is not None
+            if datasets is not None and len(datasets)>0
             else [
                 f
                 for f in os.listdir(datapath)
@@ -1277,15 +1332,19 @@ class SamplingDataset(_WrapperDataset):
         )
         assert len(self.datasets) > 0, "You must specify at least one dataset"
 
-        if weights is not None:
-            assert len(weights) == len(
-                self.datasets
-            ), f"Number of oversample weights {len(weights)} must match number of datasets {len(self.datasets)}"
-            for w in weights:
-                assert w > 0, f"Sampling rate {w} must be positive"
-        self.weights = [1] * len(self.datasets) if weights is None else weights
-        self.weights = [w / sum(self.weights) for w in self.weights]
+        if weights is not None and len(weights)==1 and weights[0]==0:
+            self.weights = [0] * len(self.datasets)
+        else:
+            if weights is not None and len(weights)>0:
+                assert len(weights) == len(
+                    self.datasets
+                ), f"Number of oversample weights {len(weights)} must match number of datasets {len(self.datasets)}"
+                for w in weights:
+                    assert w > 0, f"Sampling rate {w} must be positive"
+            self.weights = [1] * len(self.datasets) if weights is None or len(weights)==0 else weights
+            self.weights = [w / sum(self.weights) for w in self.weights]
 
+        print(f"dataset_utils.py: datasets={self.datasets}, weights={self.weights}")
         self.tokens_seen = [0] * len(self.datasets)
 
         self.current_iterator = -1
@@ -1321,15 +1380,20 @@ class SamplingDataset(_WrapperDataset):
                     self.current_iterator = -1
                 yield out
             else:
-                # Choose new subdataset to draw from
-                # (whichever is currently most underrepresented compared to target rate)
-                offset = [
-                    self.weights[i]
-                    - self.tokens_seen[i] / (sum(self.tokens_seen) + 1e-9)
-                    for i in range(len(self.datasets))
-                ]
-                offset_argmax = max((diff, i) for i, diff in enumerate(offset))[1]
-                self.current_iterator = offset_argmax
+                if self.weights[self.current_iterator]==0:
+                    self.current_iterator = self.tokens_seen.index(min(self.tokens_seen))
+                    print(f"{self.current_iterator} tokens={self.tokens_seen}")
+                else:
+                    # Choose new subdataset to draw from
+                    # (whichever is currently most underrepresented compared to target rate)
+                    offset = [
+                        self.weights[i]
+                        - self.tokens_seen[i] / (sum(self.tokens_seen) + 1e-9)
+                        for i in range(len(self.datasets))
+                    ]
+                    offset_argmax = max((diff, i) for i, diff in enumerate(offset))[1]
+                    self.current_iterator = offset_argmax
+                    #print(f"dataset[{self.current_iterator}]={self.datasets[self.current_iterator]}, tokens={self.tokens_seen[self.current_iterator]}, weights={self.weights[self.current_iterator]}")
 
     def state_dict(self):
         self.setup()
