@@ -117,6 +117,38 @@ def generate(
 
     return result
 
+class HiddenStatesExtractor(nn.Module):
+
+    def __init__(self, headless_model: Unionp[nn.Module, Callable], head: nn.Linear):
+        self.headless_model = headless_model
+        self.head = head
+        self.hidden_states_output = None
+
+    # making the assumption this is used with generate, which passes kwargs
+    def forward(self, *args, **kwargs):
+        # reset on prefill
+        if kwargs.get("past_key_value_states", None):
+            self.hidden_states_output = None
+
+        hidden_states, cache = self.headless_model(*args, **kwargs)
+
+        if kwargs.get("only_last_token", None):
+            hidden_states = hidden_states[:, -1, :]
+
+        if self.hidden_states_output is None:
+            self.hidden_states_output = hidden_states
+        else:
+            self.hidden_states_output = torch.cat((self.hidden_states_output, hidden_states), dim=-2)
+
+        logits = self.head(hidden_states)
+
+        if kwargs.get("use_cache", None):
+            return logits, cache
+        else:
+            return logits
+
+
+
 
 # Stage 1 training
 def stage1_loss(
@@ -150,11 +182,12 @@ def stage1_loss(
     Returns: scalar loss value, updated ddp stats, number of tokens in input
     """
     with torch.no_grad():
-        _, embeds = model(
+        _ = model(
             base_model_input[:, : -speculator.n_predict - 1],
             include_embeds=True,
             use_cache=False,
         )
+        embeds = model.hidden_states_output
     if cfg.sharding_strategy == "tp":
         embeds = embeds.chunk(base_model_mesh["tp"].size())[
             base_model_mesh["tp"].get_local_rank()
@@ -211,15 +244,16 @@ def stage2_loss(
         base_model_input = base_model_input[
             :, : cfg.stage2_prompt_length * grow_factor
         ].reshape(base_model_input.size(0) * grow_factor, cfg.stage2_prompt_length)
-        targs, embeds = generate(
+
+        targs = generate(
             model,
             base_model_input,
             cfg.seq_length,
             cfg.stage2_seq_length,
             do_sample=True,
             use_cache=True,
-            include_embeds=True,
         )
+        embeds = model.hidden_states_output
 
         if cfg.sharding_strategy == "tp":
             targs = targs.chunk(base_model_mesh["tp"].size())[
@@ -431,138 +465,3 @@ def train_speculator(
         tokens_seen=elapsed_tokens + n_tok,
         is_compiled=cfg.use_torch_compile,
     )
-
-
-class EmbedGPTBigCode(GPTBigCode):
-    # Overrides the forward function of GPTBigCode to allow returning embedding vectors
-    def forward(
-        self,
-        x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        past_key_value_states: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None,
-        use_cache: bool = False,
-        only_last_token: bool = False,
-        attn_algorithm: Optional[str] = None,
-        include_embeds: bool = False,
-    ):
-        output, cache = self.base_model(
-            x,
-            mask,
-            position_ids=position_ids,
-            past_key_value_states=past_key_value_states,
-            use_cache=use_cache,
-            attn_algorithm=attn_algorithm,
-        )
-
-        preds = self.head(output)
-
-        out = [preds]
-        if use_cache:
-            out.append(cache)
-        if include_embeds:
-            out.append(output)
-        if len(out) == 1:
-            return out[0]
-        return out
-
-
-class EmbedLLaMA(LLaMA):
-    # Overrides the forward function of LLaMA to allow returning embedding vectors
-    def forward(
-        self,
-        x,
-        mask=None,
-        position_ids=None,
-        past_key_value_states=None,
-        use_cache=False,
-        only_last_token=False,
-        attn_algorithm=None,
-        include_embeds=False,
-    ):
-        output, cache = self._helper(
-            x, mask, position_ids, past_key_value_states, use_cache, attn_algorithm
-        )
-
-        if only_last_token:
-            output = output[:, -1, :]
-        preds = self.shared(output, reverse=True)
-
-        out = [preds]
-        if use_cache:
-            out.append(cache)
-        if include_embeds:
-            out.append(output)
-        if len(out) == 1:
-            return out[0]
-        return out
-
-
-class EmbedMixtral(Mixtral):  # FMS impl of Mixtral
-    # Overrides the forward function of Mixtral to allow returning embedding vectors
-    def forward(
-        self,
-        x,
-        mask=None,
-        position_ids=None,
-        past_key_value_states=None,
-        use_cache=False,
-        only_last_token=False,
-        attn_algorithm=None,
-        include_embeds=False,
-    ):
-        output, cache = self.base_model(
-            x, mask, position_ids, past_key_value_states, use_cache, attn_algorithm
-        )
-
-        if only_last_token:
-            output = output[:, -1, :]
-        preds = self.head(output)
-
-        out = [preds]
-        if use_cache:
-            out.append(cache)
-        if include_embeds:
-            out.append(output)
-        if len(out) == 1:
-            return out[0]
-        return out
-
-
-def _gpt_bigcode_factory_factory(config):
-    def factory(**kwargs):
-        return EmbedGPTBigCode(config, **kwargs)
-
-    return factory
-
-
-def _llama_factory_factory(config):
-    def factory(**kwargs):
-        return EmbedLLaMA(config, **kwargs)
-
-    return factory
-
-
-def _mixtral_factory_factory(config):
-    def factory(**kwargs):
-        return EmbedMixtral(config, **kwargs)
-
-    return factory
-
-
-# example model registrations
-register_model(
-    "embedgpt_bigcode", "20b", _gpt_bigcode_factory_factory(_gpt_bigcode_20b_config)
-)
-serialization.register_adapter("embedgpt_bigcode", "hf", _gptbigcode_hf_sd_to_fms_sd)
-
-register_model(
-    "embedllama", "7b", _llama_factory_factory(get_model_config("llama2_7b"))
-)
-register_model(
-    "embedllama", "8b", _llama_factory_factory(get_model_config("llama3_8b"))
-)
-serialization.register_adapter("embedllama", "hf", _llama_hf_sd_to_fms_sd)
-
-register_model("embedmixtral", "8x7b", _mixtral_factory_factory(MixtralConfig()))
-serialization.register_adapter("embedmixtral", "hf", _mixtral_hf_sd_to_fms_sd)
