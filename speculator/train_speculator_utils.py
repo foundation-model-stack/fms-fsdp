@@ -16,106 +16,13 @@ from fms.models.llama import _hf_sd_to_fms_sd as _llama_hf_sd_to_fms_sd
 from fms.models.mixtral import Mixtral, MixtralConfig
 from fms.models.mixtral import _hf_sd_to_fms_sd as _mixtral_hf_sd_to_fms_sd
 from fms.utils import serialization, tokenizers
-from fms.utils.generation import _make_cache_contiguous
+from fms.utils.generation import generate
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 
 from fms_fsdp.config import train_config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config
-
-
-def generate(
-    model: Union[Callable, torch.nn.Module],
-    input_ids: torch.Tensor,
-    max_seq_len: int = 2048,
-    max_new_tokens: int = 256,
-    temperature: float = 1.0,
-    top_k: int = 10,
-    do_sample: bool = True,
-    num_beams: int = 1,
-    use_cache: bool = False,
-    contiguous_cache: bool = False,
-    include_embeds: bool = True,
-):
-    """
-    A straightforward copy of the generate method in fms.utils.generation.
-    The only change is the include_embeds flag, which when true also returns
-    the embedding vectors corresponding to the tokens in the output sequence.
-    """
-    batched = False
-    if num_beams != 1:
-        raise NotImplementedError("generate() does yet not support beam search")
-    if type(input_ids) == torch.Tensor:
-        if input_ids.dim() != 1:
-            batched = True
-    else:
-        raise RuntimeError("generate() requires a tensor of token ids as the prefix")
-
-    if not batched:
-        input_ids = input_ids.unsqueeze(0)
-
-    embeds = None
-    result = input_ids
-    next_input = input_ids
-    kwargs: MutableMapping[str, Any] = dict()
-    kwargs["past_key_value_states"] = None
-    kwargs["use_cache"] = use_cache
-    kwargs["include_embeds"] = include_embeds
-
-    for _ in range(max_new_tokens):
-        input_ids = next_input[:, -max_seq_len:]
-        output = model(input_ids, **kwargs)
-        if not use_cache and not include_embeds:
-            logits = output
-        else:
-            logits = output[0]
-            if include_embeds:
-                z = output[-1]
-            if use_cache:
-                past_key_value_states = output[1]
-                # TODO: this should go away when reduce-overhead issues are fixed, or
-                # maybe could be moved into model code to be more portable.
-                if contiguous_cache:
-                    kwargs["past_key_value_states"] = _make_cache_contiguous(
-                        past_key_value_states
-                    )
-                else:
-                    kwargs["past_key_value_states"] = past_key_value_states
-        logits = logits[:, -1, :]
-
-        if do_sample:
-            # get logits from last value in sequence nad scale
-            logits = logits / temperature
-            if top_k:
-                v, _ = torch.topk(logits, top_k)
-                logits[logits < v[:, [-1]]] = -float("inf")
-
-            probs = F.softmax(logits, dim=-1)
-            next_val = torch.multinomial(probs, num_samples=1)
-        else:
-            next_val = torch.argmax(logits, dim=-1).unsqueeze(0).t()
-
-        result = torch.cat((result, next_val), dim=-1)
-
-        if use_cache:
-            next_input = next_val
-        else:
-            next_input = result
-
-        if include_embeds:
-            if embeds is None:
-                embeds = z
-            else:
-                embeds = torch.cat((embeds, z), dim=-2)
-
-    if not batched:
-        result = result[0]
-
-    if include_embeds:
-        return result, embeds
-
-    return result
 
 class HiddenStatesExtractor(nn.Module):
 
