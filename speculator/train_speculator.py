@@ -6,7 +6,9 @@ import fire  # type: ignore
 import torch
 import torch.optim as optim
 from fms.models import get_model
+from fms.models.gpt_bigcode import GPTBigCode
 from fms.models.llama import LLaMABlock
+from fms.models.mixtral import Mixtral
 from fms.utils import generation, tokenizers
 from fms_extras.models.speculator import MLPSpeculator  # type: ignore
 from torch import distributed as dist
@@ -24,8 +26,7 @@ from fms_fsdp.utils.train_utils import (
     setup,
     setup_environ_flags,
 )
-from speculator.train_speculator_utils import train_speculator
-
+from speculator.train_speculator_utils import train_speculator, HiddenStatesExtractor
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -158,6 +159,17 @@ def main(**kwargs):
             base_model_mesh["tp"].get_group() if cfg.sharding_strategy == "tp" else None
         ),
     )
+
+    if isinstance(model, LLaMA):
+        headless_model = model._helper
+        head = model.shared.head
+    elif isinstance(model, (GPTBigCode, Mixtral)):
+        headless_model = model.base_model
+        head = model.head
+    else:
+        raise ValueError("speculative training currently only supports LLaMA, GPTBigCode, and Mixtral architectures")
+
+    model = HiddenStatesExtractor(headless_model, head)
 
     if rank == 0:
         print(f"{time.time()}")
