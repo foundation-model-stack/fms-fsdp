@@ -63,6 +63,24 @@ def get_model_config(model_variant):
             nlayers=24,
             max_expected_seq_len=8192,
         )
+    elif model_variant == "llama2mod_starcoder_3b":
+        llama_config = LLaMAConfig(
+            src_vocab_size=49152,
+            emb_dim=3072,
+            nheads=24,
+            nlayers=24,
+            hidden_grow_factor=8 / 3,
+            max_expected_seq_len=8192,
+        )
+    elif model_variant == "llama2mod_starcoder_7b":
+        llama_config = LLaMAConfig(
+            src_vocab_size=49152,
+            emb_dim=4096,
+            nheads=32,
+            nlayers=32,
+            hidden_grow_factor=8 / 3,
+            max_expected_seq_len=8192,
+        )
     elif model_variant == "llama2_1.4b":
         llama_config = LLaMAConfig(
             emb_dim=2048,
