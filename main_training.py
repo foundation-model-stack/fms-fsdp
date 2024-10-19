@@ -142,7 +142,7 @@ def main(**kwargs):
                 lr = 0.1 + 0.5 * (1 - 0.1) * (1 + math.cos(x / (0.9 * cfg.num_steps) * math.pi))
             else:
                 # Keeping learning rate constant for the last 10% of steps
-                lr = 0.1 + 0.5 * (1 - 0.1) * (1 + math.cos(1.0 * math.pi))
+                lr = 0.1
             return lr
         
         schedule = lambda x: modified_schedule(x)
