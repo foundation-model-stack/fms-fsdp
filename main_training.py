@@ -132,7 +132,21 @@ def main(**kwargs):
 
     # LR schedule
     if cfg.training_stage == "annealing":
-        schedule = lambda x: math.exp(-3.5 * x / cfg.num_steps)
+        # exp decay
+        # schedule = lambda x: math.exp(-3.5 * x / cfg.num_steps)
+
+        # cosine annealing upto 90%
+        def modified_schedule(x):
+            if x < 0.9 * cfg.num_steps:
+                # Cosine annealing for 90% of steps
+                lr = 0.1 + 0.5 * (1 - 0.1) * (1 + math.cos(x / (0.9 * cfg.num_steps) * math.pi))
+            else:
+                # Keeping learning rate constant for the last 10% of steps
+                lr = 0.1 + 0.5 * (1 - 0.1) * (1 + math.cos(1.0 * math.pi))
+            return cfg.learning_rate * lr
+        
+        schedule = lambda x: modified_schedule(x)
+        
     else:
         warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
