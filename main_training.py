@@ -143,10 +143,10 @@ def main(**kwargs):
             else:
                 # Keeping learning rate constant for the last 10% of steps
                 lr = 0.1 + 0.5 * (1 - 0.1) * (1 + math.cos(1.0 * math.pi))
-            return cfg.learning_rate * lr
+            return lr
         
         schedule = lambda x: modified_schedule(x)
-        
+
     else:
         warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
