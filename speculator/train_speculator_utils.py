@@ -26,7 +26,8 @@ from fms_fsdp.utils.config_utils import get_model_config
 
 class HiddenStatesExtractor(nn.Module):
 
-    def __init__(self, headless_model: Unionp[nn.Module, Callable], head: nn.Linear):
+    def __init__(self, headless_model: Union[nn.Module, Callable], head: nn.Linear):
+        super().__init__()
         self.headless_model = headless_model
         self.head = head
         self.hidden_states_output = None

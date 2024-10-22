@@ -7,7 +7,7 @@ import torch
 import torch.optim as optim
 from fms.models import get_model
 from fms.models.gpt_bigcode import GPTBigCode
-from fms.models.llama import LLaMABlock
+from fms.models.llama import LLaMA
 from fms.models.mixtral import Mixtral
 from fms.utils import generation, tokenizers
 from fms_extras.models.speculator import MLPSpeculator  # type: ignore
@@ -105,6 +105,21 @@ def get_training_data_loader(rank, cfg, world_size, speculator_mesh):
     return train_loader
 
 
+def wrap_model(model):
+    if isinstance(model, LLaMA) or (hasattr(model, "module") and isinstance(model.module, LLaMA)):
+        headless_model = model._helper
+        head = model.shared.head
+        return HiddenStatesExtractor(headless_model, head)
+    
+    model_types = (GPTBigCode, Mixtral)
+    if isinstance(model, model_types) or (hasattr(model, "module") and isinstance(model.module, model_types)):
+        headless_model = model.base_model
+        head = model.head
+        return HiddenStatesExtractor(headless_model, head)
+
+    raise ValueError("speculative training currently only supports LLaMA, GPTBigCode, and Mixtral architectures")
+
+
 def main(**kwargs):
     # get configs
     cfg = config.train_config()
@@ -149,8 +164,8 @@ def main(**kwargs):
     mixed_precision_policy = get_mixed_precision_policy(cfg, rank)
 
     model = get_model(
-        cfg.model_arch,
-        cfg.model_variant,
+        architecture=cfg.model_arch,
+        variant=cfg.model_variant,
         model_path=cfg.model_path,
         device_type="cuda",
         source="hf",
@@ -160,25 +175,20 @@ def main(**kwargs):
         ),
     )
 
-    if isinstance(model, LLaMA):
-        headless_model = model._helper
-        head = model.shared.head
-    elif isinstance(model, (GPTBigCode, Mixtral)):
-        headless_model = model.base_model
-        head = model.head
-    else:
-        raise ValueError("speculative training currently only supports LLaMA, GPTBigCode, and Mixtral architectures")
-
-    model = HiddenStatesExtractor(headless_model, head)
+    wrapped_model = wrap_model(model)
 
     if rank == 0:
         print(f"{time.time()}")
         print(model.config)
         print(model)
+        print(wrapped_model)
 
     model.eval()
     with torch.no_grad():
         test_model(rank, model, cfg.model_arch, cfg)
+    wrapped_model.eval()
+    with torch.no_grad():
+        test_model(rank, wrapped_model, cfg.model_arch, cfg)
 
     emb_dim = get_emb_dim(model)
     vocab_size = get_vocab_size(model)
@@ -241,6 +251,7 @@ def main(**kwargs):
             )
         model = torch.compile(model)
         speculator = torch.compile(speculator)
+    
 
     # Optimizer
     optimizer = optim.AdamW(
@@ -320,7 +331,7 @@ def main(**kwargs):
     torch.cuda.empty_cache()
     train_speculator(
         cfg,
-        model,
+        wrapped_model,
         speculator,
         local_rank,
         rank,
