@@ -416,7 +416,7 @@ class AutoHandler(_ShardFileHandler):
         Open the file, to be indexed via self.get() method.
         Avoid reading entire multi-Gb files when possible!
         """
-        if "arrow" in os.path.splitext(filepath)[1]:
+        if "arrow" in os.path.splitext(path)[1]:
             self.current = self.AHandler
         else:
             self.current = self.PHandler
@@ -427,7 +427,7 @@ class AutoHandler(_ShardFileHandler):
         Calculate the number of documents in the given file.
         Avoid reading entire multi-Gb files when possible!
         """
-        if "arrow" in os.path.splitext(filepath)[1]:
+        if "arrow" in os.path.splitext(path)[1]:
             return self.AHandler.length(path)
         else:
             return self.PHandler.length(path)
