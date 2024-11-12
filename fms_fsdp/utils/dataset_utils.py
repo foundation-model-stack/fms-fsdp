@@ -427,7 +427,10 @@ class AutoHandler(_ShardFileHandler):
         Calculate the number of documents in the given file.
         Avoid reading entire multi-Gb files when possible!
         """
-        return self.current.length(path)
+        if "arrow" in os.path.splitext(filepath)[1]:
+            return self.AHandler.length(path)
+        else:
+            return self.PHandler.length(path)
 
     def get(self, reader, index: int, drop_tokens: Set):
         """
