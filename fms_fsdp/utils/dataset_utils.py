@@ -384,10 +384,10 @@ class ParquetHandler(_ShardFileHandler):
         return "parquet" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
-        return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
+        return pq.read_pandas(path, columns=[self.col_name], partitioning=None)[self.col_name]
 
     def length(self, path: str):
-        return pq.read_pandas(path, columns=[]).num_rows
+        return pq.read_metadata(path).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
         doc = self.tokenizer(str(reader[index]))["input_ids"]
