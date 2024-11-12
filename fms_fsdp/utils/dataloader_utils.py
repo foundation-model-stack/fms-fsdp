@@ -2,6 +2,7 @@ import torch
 
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
+    AutoHandler,
     BufferDataset,
     CheckpointDataset,
     ParquetHandler,
@@ -16,6 +17,7 @@ from fms_fsdp.utils.dataset_utils import (
 _handler_map = {
     "arrow": ArrowHandler,
     "hf_parquet": ParquetHandler,
+    "auto": AutoHandler,
 }
 
 
@@ -84,10 +86,10 @@ def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     assert (
         cfg.file_type in _handler_map
     ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
-    if cfg.file_type == "hf_parquet":
-        filehandler = ParquetHandler(cfg.tokenizer_path, cfg.col_name)
+    if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
+        filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cfg.col_name)
     else:
-        filehandler = _handler_map[cfg.file_type](cfg.col_name)
+        filehandler = _handler_map[cfg.file_type]
     # Base reader layer
     data = StreamingDocDataset(
         cfg.data_path,
