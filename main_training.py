@@ -141,7 +141,7 @@ def main(**kwargs):
             1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
             0.01
             + 0.5
-            * (1 - 0.1)
+            * (1 - 0.01)
             * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         )
         
