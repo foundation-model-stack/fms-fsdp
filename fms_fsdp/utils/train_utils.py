@@ -167,6 +167,7 @@ def train(
             kl_regularizer = cfg.kl_regularizer
         with torch.no_grad():
             gathered_losses = gathered_losses.detach()
+            perplexity = torch.exp(gathered_losses.mean())
 
             lmin = gathered_losses.min().item()
             lmax = gathered_losses.max().item()
@@ -233,6 +234,7 @@ def train(
 
                 print("step:", batch_idx)
                 print("loss:", current_loss)
+                print("perplexity", perplexity)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("gradient norm:", current_gnorm)
