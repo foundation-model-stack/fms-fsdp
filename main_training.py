@@ -136,20 +136,20 @@ def main(**kwargs):
     else:
         
         # (cosine 0.01 decay)
-        warmup_interval = min(1000, cfg.num_steps // 10)
-        schedule = lambda x: min(
-            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-            0.01
-            + 0.5
-            * (1 - 0.01)
-            * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-        )
+        # warmup_interval = min(1000, cfg.num_steps // 10)
+        # schedule = lambda x: min(
+        #     1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+        #     0.01
+        #     + 0.5
+        #     * (1 - 0.01)
+        #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+        # )
         
         # (constant schedule)
-        # warmup_interval = 1000  
-        # schedule = lambda x: (
-        #     min(x, warmup_interval) / warmup_interval
-        # )
+        warmup_interval = 1000  
+        schedule = lambda x: (
+            min(x, warmup_interval) / warmup_interval
+        )
 
         # (cosine 0.1 decay)
         # warmup_interval = min(2000, cfg.num_steps // 20)
