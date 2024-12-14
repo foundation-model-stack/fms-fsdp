@@ -394,6 +394,8 @@ class ParquetHandler(_ShardFileHandler):
         if len(doc) > 0:
             if doc[0] in drop_tokens:
                 doc = doc[1:]
+        # check the length again after removing the first token
+        if len(doc) > 0:
             if doc[-1] in drop_tokens:
                 doc = doc[:-1]
         return doc
