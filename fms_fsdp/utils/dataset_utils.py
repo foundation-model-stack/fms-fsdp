@@ -415,7 +415,7 @@ class AutoHandler(_ShardFileHandler):
             "parquet" in os.path.splitext(filepath)[1]
             or "arrow" in os.path.splitext(filepath)[1]
         )
-    
+
     def open(self, path: str):
         """
         Open the file, to be indexed via self.get() method.
