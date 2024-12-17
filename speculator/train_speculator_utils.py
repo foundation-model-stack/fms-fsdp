@@ -10,11 +10,11 @@ import torch.nn.functional as F
 from fms.models import register_model
 from fms.models.gpt_bigcode import GPTBigCode
 from fms.models.gpt_bigcode import _20b_config as _gpt_bigcode_20b_config
-from fms.models.gpt_bigcode import _hf_sd_to_fms_sd as _gptbigcode_hf_sd_to_fms_sd
+from fms.models.gpt_bigcode import _hf_to_fms_names as _gptbigcode_hf_sd_to_fms_sd
 from fms.models.llama import LLaMA
-from fms.models.llama import _hf_sd_to_fms_sd as _llama_hf_sd_to_fms_sd
+from fms.models.llama import _hf_to_fms_names as _llama_hf_sd_to_fms_sd
 from fms.models.mixtral import Mixtral, MixtralConfig
-from fms.models.mixtral import _hf_sd_to_fms_sd as _mixtral_hf_sd_to_fms_sd
+from fms.models.mixtral import _hf_to_fms_names as _mixtral_hf_sd_to_fms_sd
 from fms.utils import serialization, tokenizers
 from fms.utils.generation import _make_cache_contiguous
 from torch.nn import CrossEntropyLoss
