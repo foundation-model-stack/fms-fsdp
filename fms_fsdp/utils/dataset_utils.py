@@ -384,7 +384,9 @@ class ParquetHandler(_ShardFileHandler):
         return "parquet" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
-        return pq.read_pandas(path, columns=[self.col_name], partitioning=None)[self.col_name]
+        return pq.read_pandas(path, columns=[self.col_name], partitioning=None)[
+            self.col_name
+        ]
 
     def length(self, path: str):
         return pq.read_metadata(path).num_rows
@@ -409,7 +411,10 @@ class AutoHandler(_ShardFileHandler):
         self.current = self.AHandler
 
     def is_legal(self, filepath: str):
-        return "parquet" in os.path.splitext(filepath)[1] or "arrow" in os.path.splitext(filepath)[1]
+        return (
+            "parquet" in os.path.splitext(filepath)[1]
+            or "arrow" in os.path.splitext(filepath)[1]
+        )
     
     def open(self, path: str):
         """
