@@ -1,6 +1,6 @@
 import fire
 import torch
-from fms.models.hf import to_hf_api
+from fms.models.hf.utils import to_hf_api
 from fms.models.llama import LLaMA
 from torch.distributed._shard.checkpoint import FileSystemReader, load_state_dict
 from transformers import LlamaConfig, LlamaForCausalLM
