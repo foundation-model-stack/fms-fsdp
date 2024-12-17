@@ -554,7 +554,9 @@ def _mixtral_factory_factory(config):
 register_model(
     "embedgpt_bigcode", "20b", _gpt_bigcode_factory_factory(_gpt_bigcode_20b_config)
 )
-serialization.register_adapter_step("embedgpt_bigcode", "hf_to_fms", _gptbigcode_hf_sd_to_fms_sd)
+serialization.register_adapter_step(
+    "embedgpt_bigcode", "hf_to_fms", _gptbigcode_hf_sd_to_fms_sd
+)
 serialization.register_adapter("embedgpt_bigcode", "hf", ["hf_to_fms"])
 
 register_model(
@@ -562,10 +564,12 @@ register_model(
 )
 register_model(
     "embedllama", "8b", _llama_factory_factory(get_model_config("llama3_8b"))
-    )
+)
 serialization.register_adapter_step("embedllama", "hf_to_fms", _llama_hf_sd_to_fms_sd)
 serialization.register_adapter("embedllama", "hf", ["hf_to_fms"])
 
 register_model("embedmixtral", "8x7b", _mixtral_factory_factory(MixtralConfig()))
-serialization.register_adapter_step("embedmixtral", "hf_to_fms", _mixtral_hf_sd_to_fms_sd)
+serialization.register_adapter_step(
+    "embedmixtral", "hf_to_fms", _mixtral_hf_sd_to_fms_sd
+)
 serialization.register_adapter("embedmixtral", "hf", ["hf_to_fms"])
