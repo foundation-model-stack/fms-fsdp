@@ -408,7 +408,7 @@ class AutoHandler(_ShardFileHandler):
     def __init__(self, tokenizer_path: str, col_name: str = "text"):
         self.PHandler = ParquetHandler(tokenizer_path, col_name)
         self.AHandler = ArrowHandler()
-        self.current = self.AHandler
+        self.current = _ShardFileHandler()
 
     def is_legal(self, filepath: str):
         return (
