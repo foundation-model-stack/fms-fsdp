@@ -360,6 +360,7 @@ class ArrowHandler(_ShardFileHandler):
         if len(doc) > 0:
             if doc[0].as_py() in drop_tokens:
                 doc = doc.slice(1, len(doc) - 1)
+        if len(doc) > 0:
             if doc[-1].as_py() in drop_tokens:
                 doc = doc.slice(0, len(doc) - 1)
         return doc
