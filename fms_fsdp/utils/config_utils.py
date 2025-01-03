@@ -183,6 +183,30 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
+    elif model_variant == "bamba_debug_226m":
+        model_config = {
+            'd_model': 768, 
+            'd_intermediate': 3072, 
+            'n_layer': 12, 
+            'vocab_size': 128256, 
+            'ssm_cfg': {'layer': 'Mamba2'}, 
+            'attn_layer_idx': [2,12], 
+            'attn_cfg': {
+                'causal': True, 
+                'd_conv': 0, 
+                'head_dim': 64, 
+                'num_heads': 12, 
+                'num_heads_kv': 3, 
+                'out_proj_bias': False, 
+                'qkv_proj_bias': False, 
+                'rotary_emb_dim': 32
+            }, 
+            'rms_norm': True, 
+            'residual_in_fp32': True, 
+            'fused_add_norm': True, 
+            'pad_vocab_size_multiple': 16, 
+            'tie_embeddings': True,
+        }
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 
