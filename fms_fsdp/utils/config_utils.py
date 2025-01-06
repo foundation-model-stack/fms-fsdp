@@ -196,7 +196,7 @@ def get_model_config(model_variant):
                 'd_conv': 0, 
                 'head_dim': 64, 
                 'num_heads': 12, 
-                'num_heads_kv': 3, 
+                'num_heads_kv': 4, 
                 'out_proj_bias': False, 
                 'qkv_proj_bias': False, 
                 'rotary_emb_dim': 32
