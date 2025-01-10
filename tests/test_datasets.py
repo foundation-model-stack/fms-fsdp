@@ -633,7 +633,7 @@ def test_multi_reload_stress():
     multi_reload_stress_check(lambda: d6(d5(d4())))
 
     # Add FIM dataset
-    d7 = lambda x: [FIMDataset(d, -1, .25, .25, 10, -2, -3, -4) for d in x]
+    d7 = lambda x: [FIMDataset(d, -1, 0.25, 0.25, 10, -2, -3, -4) for d in x]
     multi_reload_stress_check(lambda: d7(d6(d5(d4()))))
 
 
