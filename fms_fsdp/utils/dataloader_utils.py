@@ -119,10 +119,10 @@ def get_data_loader(cfg, rank, world_size):
         verbose=(rank == 0),
     )
     # Wrap above dataset in packing logic to form constant-length lines.
-    # CLM removes 1 token, FIM adds at least 3.
+    # Increment seq len to counteract CLM's one token removal.
     data = BufferDataset(
         data,
-        cfg.seq_length - 3 if cfg.fim_training else cfg.seq_length + 1,
+        cfg.seq_length + 1,
         bos_token=cfg.bol_token,
         eos_token=cfg.eol_token,
         pack_hard=True,
@@ -145,9 +145,8 @@ def get_data_loader(cfg, rank, world_size):
     # Transform to tensors
     data = PreprocessDataset(data, torch.IntTensor)
 
-    # Apply CLM transformation if needed
-    if not cfg.fim_training:
-        data = PreprocessDataset(data, causal_lm)
+    # Apply CLM transformation
+    data = PreprocessDataset(data, causal_lm)
 
     # Enable auto-saving
     data = CheckpointDataset(
