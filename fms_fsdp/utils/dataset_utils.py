@@ -694,14 +694,14 @@ class PreloadBufferDataset(_WrapperDataset):
         # Manually set buffer size
         self.buffer_size = len(self.buffer)
         return sharded_dicts
-    
+
 
 class FIMDataset(_WrapperDataset):
     """
     Wrapper for a StatefulDataset that implements Fill-In-the-Middle training
     (https://arxiv.org/pdf/2207.14255).
     Input should be a packed sequence (i.e. call BufferDataset before FIMDataset).
-    Breaks sequence apart into component document spans, and for each document span 
+    Breaks sequence apart into component document spans, and for each document span
     of sufficient length, transforms with specified probability into:
     PSM mode: <PRE> (prefix) <SUF> (suffix) <MID> (middle) <EOS>
     SPM mode: <PRE> <SUF> (suffix) <MID> (prefix) (middle) <EOS>
@@ -729,15 +729,15 @@ class FIMDataset(_WrapperDataset):
     """
 
     def __init__(
-        self, 
-        dataset: _StatefulDataset, 
+        self,
+        dataset: _StatefulDataset,
         delimiter_token: Any,
         psm_rate: float = 0.0,
         spm_rate: float = 0.0,
         min_len: int = 10,
-        pre_token = None,
-        mid_token = None,
-        suf_token = None,
+        pre_token=None,
+        mid_token=None,
+        suf_token=None,
     ):
         super().__init__(dataset)
         assert (
@@ -757,14 +757,16 @@ class FIMDataset(_WrapperDataset):
         self.g_state = None
         self.generator = torch.Generator().manual_seed(self.rank)
         self.state_params = ["g_state"]
-        
+
     def __iter__(self):
         dataset = iter(self.dataset)
         while True:
             inp = next(dataset)
             len_ = len(inp)
-            i_eos = [0] + [i for i,x in enumerate(inp) if x==self.delimiter] + [len_]
-            docs = [inp[i_eos[j]+1:i_eos[j+1]] for j in range(len(i_eos)-1)]  # list[list[any]]
+            i_eos = [0] + [i for i, x in enumerate(inp) if x == self.delimiter] + [len_]
+            docs = [
+                inp[i_eos[j] + 1 : i_eos[j + 1]] for j in range(len(i_eos) - 1)
+            ]  # list[list[any]]
             out = []
             for i in range(len(docs)):
                 doc = docs[i]
@@ -776,10 +778,12 @@ class FIMDataset(_WrapperDataset):
                         doc = []
                         if self.pref:
                             doc = [self.pref]
-                        splits = torch.randint(0, len(docs[i]), [2], generator=self.generator).tolist()
-                        pre = docs[i][:min(splits)]
-                        mid = docs[i][min(splits):max(splits)]
-                        suf = docs[i][max(splits):]
+                        splits = torch.randint(
+                            0, len(docs[i]), [2], generator=self.generator
+                        ).tolist()
+                        pre = docs[i][: min(splits)]
+                        mid = docs[i][min(splits) : max(splits)]
+                        suf = docs[i][max(splits) :]
 
                         if thresh < self.psm:
                             # PSM transformation
@@ -990,9 +994,9 @@ class StreamingDocDataset(_StatefulDataset):
         self.bos = bos_token
         self.drop = strip_tokens
         self.verbose = verbose
-        self.docset: List[
-            Any
-        ] = []  # map of doc indices to (shardid, min docid, max docid)
+        self.docset: List[Any] = (
+            []
+        )  # map of doc indices to (shardid, min docid, max docid)
 
         # Position
         self.docset_index = 0
