@@ -994,9 +994,8 @@ class StreamingDocDataset(_StatefulDataset):
         self.bos = bos_token
         self.drop = strip_tokens
         self.verbose = verbose
-        self.docset: List[Any] = (
-            []
-        )  # map of doc indices to (shardid, min docid, max docid)
+        # Map of doc indices to (shardid, min docid, max docid)
+        self.docset: List[Any] = []  
 
         # Position
         self.docset_index = 0
