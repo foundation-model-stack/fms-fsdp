@@ -150,7 +150,7 @@ def main(**kwargs):
         # schedule = lambda x: (
         #     min(x, warmup_interval) / warmup_interval
         # )
-        schedule = lambda x: 1.0
+        schedule = 1.0
 
         # (cosine 0.1 decay)
         # warmup_interval = min(2000, cfg.num_steps // 20)
@@ -160,7 +160,7 @@ def main(**kwargs):
         #     + 0.5
         #     * (1 - 0.1)
         #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-        # )
+        # # )
         
         # linear decay to 50b tokens and then constant lr
         # schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
