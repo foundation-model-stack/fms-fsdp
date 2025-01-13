@@ -150,7 +150,7 @@ def main(**kwargs):
         # schedule = lambda x: (
         #     min(x, warmup_interval) / warmup_interval
         # )
-        schedule = 1.0
+        schedule = lambda x: min(1.0, x)
 
         # (cosine 0.1 decay)
         # warmup_interval = min(2000, cfg.num_steps // 20)
