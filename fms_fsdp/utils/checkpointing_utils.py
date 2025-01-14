@@ -324,9 +324,9 @@ class Checkpointer:
     ):
         # Note: metadata kwargs cannot contain any of:
         # (step, model)
-        pth_path = os.path.join(self.ckp_path[:-12], "pth")
+        pth_path = os.path.join(self.ckp_path[:-12], "pth", "step_" + str(step))
         os.makedirs(pth_path, exist_ok=True)
-        save_name = os.path.join(pth_path, "step_" + str(step) + "_ckp.pth")
+        save_name = os.path.join(pth_path, "consolidated.00.pth")
         save_time = time.time()
         with FSDP.state_dict_type(
             model,
