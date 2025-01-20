@@ -357,11 +357,11 @@ class ArrowHandler(_ShardFileHandler):
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
         doc = reader.get_batch(index)[self.col_name]
-        if len(doc) > 0:
-            if doc[0].as_py() in drop_tokens:
-                doc = doc.slice(1, len(doc) - 1)
-            if doc[-1].as_py() in drop_tokens:
-                doc = doc.slice(0, len(doc) - 1)
+        if len(doc) > 0 and doc[0].as_py() in drop_tokens:
+            doc = doc.slice(1, len(doc) - 1)
+        # Recheck len for edge case where doc=[eos]
+        if len(doc) > 0 and doc[-1].as_py() in drop_tokens:
+            doc = doc.slice(0, len(doc) - 1)
         return doc
 
     def slice(self, doc: pa.UInt32Array, index: int, n_pull: int) -> List:
@@ -384,22 +384,77 @@ class ParquetHandler(_ShardFileHandler):
         return "parquet" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
-        return pq.read_pandas(path, columns=[self.col_name])[self.col_name]
+        return pq.read_pandas(path, columns=[self.col_name], partitioning=None)[
+            self.col_name
+        ]
 
     def length(self, path: str):
-        return pq.read_pandas(path, columns=[]).num_rows
+        return pq.read_metadata(path).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
         doc = self.tokenizer(str(reader[index]))["input_ids"]
-        if len(doc) > 0:
-            if doc[0] in drop_tokens:
-                doc = doc[1:]
-            if doc[-1] in drop_tokens:
-                doc = doc[:-1]
+        if len(doc) > 0 and doc[0] in drop_tokens:
+            doc = doc[1:]
+        # Recheck len for edge case where doc=[eos]
+        if len(doc) > 0 and doc[-1] in drop_tokens:
+            doc = doc[:-1]
         return doc
 
     def slice(self, doc: List, index: int, n_pull: int) -> List:
         return doc[index : index + n_pull]
+
+
+class AutoHandler(_ShardFileHandler):
+    def __init__(self, tokenizer_path: str, col_name: str = "text"):
+        self.PHandler = ParquetHandler(tokenizer_path, col_name)
+        self.AHandler = ArrowHandler()
+        self.current = _ShardFileHandler()
+
+    def is_legal(self, filepath: str):
+        return (
+            "parquet" in os.path.splitext(filepath)[1]
+            or "arrow" in os.path.splitext(filepath)[1]
+        )
+
+    def open(self, path: str):
+        """
+        Open the file, to be indexed via self.get() method.
+        Avoid reading entire multi-Gb files when possible!
+        """
+        if "arrow" in os.path.splitext(path)[1]:
+            self.current = self.AHandler
+        else:
+            self.current = self.PHandler
+        return self.current.open(path)
+
+    def length(self, path: str):
+        """
+        Calculate the number of documents in the given file.
+        Avoid reading entire multi-Gb files when possible!
+        """
+        if "arrow" in os.path.splitext(path)[1]:
+            return self.AHandler.length(path)
+        else:
+            return self.PHandler.length(path)
+
+    def get(self, reader, index: int, drop_tokens: Set):
+        """
+        Given the output of self.open() and an index, return the document at that index.
+        Then, remove the first and/or last items if they appear in drop_tokens.
+        Try to avoid reading entire documents at a time in case of long documents,
+        but this is less important than avoiding reading entire files as above.
+        Output must support len().
+        """
+        return self.current.get(reader, index, drop_tokens)
+
+    def slice(self, doc, index: int, n_pull: int) -> List:
+        """
+        Given a long document, retrieve n_pull consecutive items starting from index.
+        Again, try to be memory-efficient when doing so, but efficiency in self.get()
+        and self.open() is far more important.
+        Must return a python list.
+        """
+        return self.current.slice(doc, index, n_pull)
 
 
 #### -------------------------    PIPELINE LAYERS    ------------------------- ####
