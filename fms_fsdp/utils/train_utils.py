@@ -2,6 +2,7 @@ import os
 from dataclasses import asdict
 from functools import partial
 
+from transformers.models.granitemoe.modeling_granitemoe import load_balancing_loss_func
 
 try:
     import packaging.version
@@ -86,9 +87,23 @@ def train(
 
         optimizer.zero_grad()
         output = model(input)
-        output = output.logits if hasattr(output, "logits") else output
+        logits = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
-        loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+        loss = ce_loss(logits.view(-1, logits.size(-1)), label.view(-1).long())
+        if "moe" in cfg.model_variant:
+            aux_outputs = output.aux_outputs
+            if aux_outputs is not None:
+                top_k = model.config.mlp_cfg.get('top_k',2)
+                aux_loss = load_balancing_loss_func(
+                    aux_outputs,
+                    num_experts=model.config.mlp_cfg['n_expert'],
+                    top_k=top_k,
+                )
+                _, distribution = aux_outputs[0].topk(
+                    top_k
+                ).indices.unique(return_counts=True)
+                distribution = distribution.detach().cpu().tolist()
+                loss += 0.2 * aux_loss
 
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
@@ -145,6 +160,8 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
+                if "moe" in cfg.model_variant:
+                    print("distribution", distribution)
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,
