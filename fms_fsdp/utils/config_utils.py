@@ -218,6 +218,68 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False
         }
+    elif model_variant == "mamba_30b_moe":
+        model_config = {
+            "d_model": 6144,
+            "d_intermediate": 336,
+            "n_layer": 48,
+            "vocab_size": 128256,
+            "ssm_cfg": {
+                "layer": "Mamba2"
+            },
+            "attn_layer_idx": [9, 18, 27, 36, 45],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 48,
+                "num_heads_kv": 8,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64
+            },
+            "mlp_cfg": {
+                "n_expert": 64,
+                "load_balancing_loss": True,
+                "top_k": 8
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False
+        }
+    elif model_variant == "mamba_120b_moe":
+        model_config = {
+            "d_model": 8192,
+            "d_intermediate": 112,
+            "n_layer": 108,
+            "vocab_size": 128256,
+            "ssm_cfg": {
+                "layer": "Mamba2"
+            },
+            "attn_layer_idx": [9, 18, 27, 36, 45, 54, 63, 72, 81, 90, 99],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 64,
+                "num_heads_kv": 8,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64
+            },
+            "mlp_cfg": {
+                "n_expert": 256,
+                "load_balancing_loss": True,
+                "top_k": 16
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False
+        }
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 
