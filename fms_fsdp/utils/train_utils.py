@@ -4,6 +4,7 @@ from functools import partial
 
 from transformers.models.granitemoe.modeling_granitemoe import load_balancing_loss_func
 
+
 try:
     import packaging.version
 except ImportError:
@@ -93,15 +94,15 @@ def train(
         if "moe" in cfg.model_variant:
             aux_outputs = output.aux_outputs
             if aux_outputs is not None:
-                top_k = model.config.mlp_cfg.get('top_k',2)
+                top_k = model.config.mlp_cfg.get("top_k", 2)
                 aux_loss = load_balancing_loss_func(
                     aux_outputs,
-                    num_experts=model.config.mlp_cfg['n_expert'],
+                    num_experts=model.config.mlp_cfg["n_expert"],
                     top_k=top_k,
                 )
-                _, distribution = aux_outputs[0].topk(
-                    top_k
-                ).indices.unique(return_counts=True)
+                _, distribution = (
+                    aux_outputs[0].topk(top_k).indices.unique(return_counts=True)
+                )
                 distribution = distribution.detach().cpu().tolist()
                 loss += 0.2 * aux_loss
 
