@@ -134,7 +134,7 @@ def main(**kwargs):
     # linear decay for annealing
     if cfg.training_stage == "annealing":
         schedule = lambda x: 1 - x / cfg.num_steps
-    else:
+    elif cfg.training_stage == "cosine":
         # cosine decay
         warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
@@ -144,6 +144,8 @@ def main(**kwargs):
             * (1 - 0.1)
             * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         )
+    else:
+        schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
