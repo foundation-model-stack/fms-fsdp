@@ -357,11 +357,11 @@ class ArrowHandler(_ShardFileHandler):
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
         doc = reader.get_batch(index)[self.col_name]
-        if len(doc) > 0:
-            if doc[0].as_py() in drop_tokens:
-                doc = doc.slice(1, len(doc) - 1)
-            if doc[-1].as_py() in drop_tokens:
-                doc = doc.slice(0, len(doc) - 1)
+        if len(doc) > 0 and doc[0].as_py() in drop_tokens:
+            doc = doc.slice(1, len(doc) - 1)
+        # Recheck len for edge case where doc=[eos]
+        if len(doc) > 0 and doc[-1].as_py() in drop_tokens:
+            doc = doc.slice(0, len(doc) - 1)
         return doc
 
     def slice(self, doc: pa.UInt32Array, index: int, n_pull: int) -> List:
@@ -384,18 +384,20 @@ class ParquetHandler(_ShardFileHandler):
         return "parquet" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
-        return pq.read_pandas(path, columns=[self.col_name], partitioning=None)[self.col_name]
+        return pq.read_pandas(path, columns=[self.col_name], partitioning=None)[
+            self.col_name
+        ]
 
     def length(self, path: str):
         return pq.read_metadata(path).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
         doc = self.tokenizer(str(reader[index]))["input_ids"]
-        if len(doc) > 0:
-            if doc[0] in drop_tokens:
-                doc = doc[1:]
-            if doc[-1] in drop_tokens:
-                doc = doc[:-1]
+        if len(doc) > 0 and doc[0] in drop_tokens:
+            doc = doc[1:]
+        # Recheck len for edge case where doc=[eos]
+        if len(doc) > 0 and doc[-1] in drop_tokens:
+            doc = doc[:-1]
         return doc
 
     def slice(self, doc: List, index: int, n_pull: int) -> List:
@@ -406,11 +408,14 @@ class AutoHandler(_ShardFileHandler):
     def __init__(self, tokenizer_path: str, col_name: str = "text"):
         self.PHandler = ParquetHandler(tokenizer_path, col_name)
         self.AHandler = ArrowHandler()
-        self.current = None
+        self.current = _ShardFileHandler()
 
     def is_legal(self, filepath: str):
-        return "parquet" in os.path.splitext(filepath)[1] or "arrow" in os.path.splitext(filepath)[1]
-    
+        return (
+            "parquet" in os.path.splitext(filepath)[1]
+            or "arrow" in os.path.splitext(filepath)[1]
+        )
+
     def open(self, path: str):
         """
         Open the file, to be indexed via self.get() method.
