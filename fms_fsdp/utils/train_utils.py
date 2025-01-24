@@ -100,10 +100,6 @@ def train(
                     num_experts=model.config.mlp_cfg["n_expert"],
                     top_k=top_k,
                 )
-                _, distribution = (
-                    aux_outputs[0].topk(top_k).indices.unique(return_counts=True)
-                )
-                distribution = distribution.detach().cpu().tolist()
                 loss += 0.2 * aux_loss
 
         loss.backward()
@@ -161,8 +157,6 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
-                if "moe" in cfg.model_variant:
-                    print("distribution", distribution)
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,
