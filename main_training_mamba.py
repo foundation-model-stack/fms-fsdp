@@ -64,7 +64,8 @@ def main(**kwargs):
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
-    model = MambaLMHeadModel(mamba_config)
+    with torch.device("meta"):
+        model = MambaLMHeadModel(mamba_config)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
