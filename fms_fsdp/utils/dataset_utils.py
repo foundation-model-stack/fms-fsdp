@@ -393,11 +393,11 @@ class ParquetHandler(_ShardFileHandler):
 
     def get(self, reader, index: int, drop_tokens: Set):
         doc = self.tokenizer(str(reader[index]))["input_ids"]
-        if len(doc) > 0:
-            if doc[0] in drop_tokens:
-                doc = doc[1:]
-            if doc[-1] in drop_tokens:
-                doc = doc[:-1]
+        if len(doc) > 0 and doc[0] in drop_tokens:
+            doc = doc[1:]
+        # Recheck len for edge case where doc=[eos]
+        if len(doc) > 0 and doc[-1] in drop_tokens:
+            doc = doc[:-1]
         return doc
 
     def slice(self, doc: List, index: int, n_pull: int) -> List:
