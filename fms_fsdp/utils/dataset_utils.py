@@ -343,8 +343,8 @@ class ArrowHandler(_ShardFileHandler):
     Non-standard data format, though.
     """
 
-    def __init__(self, col_name: str = "tokens"):
-        self.col_name = col_name
+    def __init__(self, col_names: List[str] = ["tokens"]):
+        self.col_names = col_names
 
     def is_legal(self, filepath: str):
         return "arrow" in os.path.splitext(filepath)[1]
@@ -356,7 +356,13 @@ class ArrowHandler(_ShardFileHandler):
         return self.open(path).num_record_batches
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
-        doc = reader.get_batch(index)[self.col_name]
+        frame = reader.get_batch(index)
+        doc = None
+        for name in self.col_names:
+            if name in frame.column_names:
+                doc = frame[name]
+                break
+        assert doc is not None, f"None of column names {self.col_names} found in file headers {frame.column_names}"
         if len(doc) > 0 and doc[0].as_py() in drop_tokens:
             doc = doc.slice(1, len(doc) - 1)
         # Recheck len for edge case where doc=[eos]
@@ -376,17 +382,22 @@ class ParquetHandler(_ShardFileHandler):
     before getting/slicing. However, this is a standard and widely-used data format.
     """
 
-    def __init__(self, tokenizer_path: str, col_name: str = "text"):
+    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text"]):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-        self.col_name = col_name
+        self.col_names = col_names
 
     def is_legal(self, filepath: str):
         return "parquet" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
-        return pq.read_pandas(path, columns=[self.col_name], partitioning=None)[
-            self.col_name
-        ]
+        names = pq.read_metadata(path).schema.names
+        match = None
+        for name in self.col_names:
+            if name in names:
+                match = name
+                break
+        assert match is not None, f"None of column names {self.col_names} found in file headers {names}"
+        return pq.read_pandas(path, columns=[match], partitioning=None)[match]
 
     def length(self, path: str):
         return pq.read_metadata(path).num_rows
@@ -405,9 +416,9 @@ class ParquetHandler(_ShardFileHandler):
 
 
 class AutoHandler(_ShardFileHandler):
-    def __init__(self, tokenizer_path: str, col_name: str = "text"):
-        self.PHandler = ParquetHandler(tokenizer_path, col_name)
-        self.AHandler = ArrowHandler()
+    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text", "tokens"]):
+        self.PHandler = ParquetHandler(tokenizer_path, col_names)
+        self.AHandler = ArrowHandler(col_names)
         self.current = _ShardFileHandler()
 
     def is_legal(self, filepath: str):
