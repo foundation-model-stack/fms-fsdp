@@ -345,7 +345,8 @@ class ArrowHandler(_ShardFileHandler):
 
     def __init__(self, col_names: List[str] = ["tokens"]):
         self.col_names = col_names
-
+        # print(self.col_names)
+        
     def is_legal(self, filepath: str):
         return "arrow" in os.path.splitext(filepath)[1]
 
@@ -385,6 +386,7 @@ class ParquetHandler(_ShardFileHandler):
     def __init__(self, tokenizer_path: str, col_names: List[str] = ["text"]):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.col_names = col_names
+        # print(self.col_names)
 
     def is_legal(self, filepath: str):
         return "parquet" in os.path.splitext(filepath)[1]
