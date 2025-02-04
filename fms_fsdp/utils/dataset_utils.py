@@ -358,6 +358,8 @@ class ArrowHandler(_ShardFileHandler):
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
         frame = reader.get_batch(index)
+        print(f"Printing column names in frame: {frame.column_names}")
+        
         doc = None
         for name in self.col_names:
             if name in frame.column_names:
@@ -418,7 +420,7 @@ class ParquetHandler(_ShardFileHandler):
 
 
 class AutoHandler(_ShardFileHandler):
-    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text", "tokens"]):
+    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"]):
         self.PHandler = ParquetHandler(tokenizer_path, col_names)
         self.AHandler = ArrowHandler(col_names)
         self.current = _ShardFileHandler()
