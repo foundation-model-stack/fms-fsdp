@@ -145,6 +145,9 @@ def main(**kwargs):
             * (1 - 0.1)
             * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         )
+    elif cfg.training_stage == "constant":
+        warmup_interval = 2000
+        schedule = lambda x: (min(x, warmup_interval) / warmup_interval)
     else:
         schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
 
