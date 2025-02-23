@@ -891,6 +891,7 @@ class StreamingDocDataset(_StatefulDataset):
         # Position
         self.docset_index = 0
         self.chunk_index = -1
+        self.has_yielded = False
 
         # Stats
         self.epochs_seen = -1
@@ -1122,6 +1123,7 @@ class StreamingDocDataset(_StatefulDataset):
                                 self.percent_seen = (
                                     self.docs_seen * 100 / (self._len + 1e-9)
                                 )
+                            self.has_yielded = True
                             yield self._construct_chunk(j, doc, n_chunks)
 
                 # Advance RNG state
@@ -1142,7 +1144,11 @@ class StreamingDocDataset(_StatefulDataset):
                 n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):
                     self.chunk_index = j
+                    self.has_yielded = True
                     yield self._construct_chunk(j, doc, n_chunks)
+
+            # Check that epoch was non-empty
+            assert self.has_yielded, f"Empty logical shard detected: {self.dataset, self.docset}"
 
     def load_state_dict(self, state_dicts, sharded_input=False):
         self.setup()
