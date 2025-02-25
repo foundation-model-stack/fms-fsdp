@@ -64,7 +64,8 @@ def main(**kwargs):
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
-    model = MambaLMHeadModel(mamba_config)
+    with torch.device("meta"):
+        model = MambaLMHeadModel(mamba_config)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -89,7 +90,7 @@ def main(**kwargs):
         use_orig_params=cfg.use_torch_compile,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
-        param_init_fn=param_init_fn,
+        param_init_fn=lambda x: x.to_empty(device=torch.cuda.current_device(), recurse=False),
     )
 
     # fsdp activation checkpointing

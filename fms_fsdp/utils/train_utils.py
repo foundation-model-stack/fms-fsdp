@@ -2,6 +2,8 @@ import os
 from dataclasses import asdict
 from functools import partial
 
+from transformers.models.granitemoe.modeling_granitemoe import load_balancing_loss_func
+
 
 try:
     import packaging.version
@@ -73,7 +75,7 @@ def train(
                 run["hparams"] = asdict(cfg)
 
     model.train()
-    ddp_stats = torch.zeros(3).to(local_rank)
+    ddp_stats = torch.zeros(4).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -86,9 +88,20 @@ def train(
 
         optimizer.zero_grad()
         output = model(input)
-        output = output.logits if hasattr(output, "logits") else output
+        logits = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
-        loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+        loss = ce_loss(logits.view(-1, logits.size(-1)), label.view(-1).long())
+        ddp_stats[3] += loss.item()
+        if "moe" in cfg.model_variant:
+            aux_outputs = output.aux_outputs
+            if aux_outputs is not None:
+                top_k = model.config.mlp_cfg.get("top_k", 2)
+                aux_loss = load_balancing_loss_func(
+                    aux_outputs,
+                    num_experts=model.config.mlp_cfg["n_expert"],
+                    top_k=top_k,
+                )
+                loss += 0.2 * aux_loss
 
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
@@ -105,6 +118,7 @@ def train(
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             train_loss = ddp_stats[0] / ddp_stats[2]
             g_norm = ddp_stats[1] / ddp_stats[2]
+            original_loss = ddp_stats[3] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             new_tokens_seen = (
@@ -113,6 +127,7 @@ def train(
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
+                current_original_loss = original_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
                 current_step_time = (time.time() - start) / cfg.report_interval
@@ -132,6 +147,7 @@ def train(
 
                 print("step:", batch_idx)
                 print("loss:", current_loss)
+                print("original loss:", current_original_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("gradient norm:", current_gnorm)
@@ -149,6 +165,7 @@ def train(
                     vals_to_track = {
                         "learning rate": current_lr,
                         "loss": current_loss,
+                        "original_loss": current_original_loss,
                         "gradient norm": current_gnorm,
                         "token seen": total_tokens_seen,
                         "current throughput (token per gpu per sec)": current_throughput,
