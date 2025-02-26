@@ -404,7 +404,11 @@ class ParquetHandler(_ShardFileHandler):
         return pq.read_metadata(path).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
+        
         doc = self.tokenizer(str(reader[index]))["input_ids"]
+        
+        print(f"length of doc {len(doc)}")
+        
         if len(doc) > 0 and doc[0] in drop_tokens:
             doc = doc[1:]
         # Recheck len for edge case where doc=[eos]
