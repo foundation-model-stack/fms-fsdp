@@ -406,7 +406,6 @@ class ParquetHandler(_ShardFileHandler):
     def get(self, reader, index: int, drop_tokens: Set):
         
         document_str = str(reader[index])
-        print(f"Length of document in characters: {len(document_str)}")
         
         doc = self.tokenizer(str(reader[index]))["input_ids"]
         
