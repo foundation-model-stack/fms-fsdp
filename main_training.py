@@ -82,7 +82,7 @@ def main(**kwargs):
         print("Datasets constructed!")
 
     # PP
-    num_layers = config_data.n_layer
+    num_layers = config_data["n_layer"]
     num_stages = world_size
 
     stage_layer_map = {
@@ -107,7 +107,7 @@ def main(**kwargs):
     stage_index = rank
     if stage_index != 0:
         model.backbone.embedding = None
-    elif stage_index != num_stages - 1:
+    if stage_index != num_stages - 1:
         model.backbone.norm_f = None
         model.lm_head = None
     for i in range(num_layers):
