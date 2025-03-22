@@ -10,7 +10,6 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.pipelining import Schedule1F1B
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -81,73 +80,31 @@ def main(**kwargs):
     if rank == 0:
         print("Datasets constructed!")
 
-    # PP
-    num_layers = config_data["n_layer"]
-    num_stages = world_size
-
-    stage_layer_map = {
-        0: [0],
-        1: [1, 2],
-        2: [3, 4],
-        3: [5, 6],
-        4: [7, 8],
-        5: [9, 10],
-        6: [11, 12],
-        7: [13, 14],
-        8: [15, 16],
-        9: [17, 18],
-        10: [19, 20],
-        11: [21, 22],
-        12: [23, 24],
-        13: [25, 26],
-        14: [27, 28],
-        15: [29, 30],
-        16: [31],
-    }
-    stage_index = rank
-    if stage_index != 0:
-        model.backbone.embedding = None
-    if stage_index != num_stages - 1:
-        model.backbone.norm_f = None
-        model.lm_head = None
-    for i in range(num_layers):
-        if i not in stage_layer_map[stage_index]:
-            del model.backbone.layers[str(i)]
-
-    print(stage_index)
-    print(model)
-
-    from torch.distributed.pipelining import PipelineStage
-    stage = PipelineStage(
+    # FSDP
+    model = FSDP(
         model,
-        stage_index,
-        num_stages,
-        torch.cuda.current_device(),
+        auto_wrap_policy=wrapping_policy,
+        mixed_precision=mixed_precision_policy,
+        sharding_strategy=sharding_strategy_policy,
+        use_orig_params=cfg.use_torch_compile,
+        device_id=torch.cuda.current_device(),
+        limit_all_gathers=True,
+        param_init_fn=param_init_fn,
     )
 
-    def cross_entropy_loss(pred: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        pred = pred.logits if hasattr(pred, "logits") else pred
-        ce_loss = torch.nn.CrossEntropyLoss()
-        return ce_loss(
-            pred.view(-1, pred.size(-1)), labels.view(-1).long()
-        )
+    # fsdp activation checkpointing
+    if cfg.fsdp_activation_checkpointing:
+        if rank == 0:
+            print(f"--> applying FSDP activation checkpointing...")
+        apply_selective_ac(model, p=cfg.selective_checkpointing)
 
-    pp_schedule = Schedule1F1B(stage, n_microbatches=1, loss_fn=cross_entropy_loss)
-
-
-    # # fsdp activation checkpointing
-    # if cfg.fsdp_activation_checkpointing:
-    #     if rank == 0:
-    #         print(f"--> applying FSDP activation checkpointing...")
-    #     apply_selective_ac(model, p=cfg.selective_checkpointing)
-
-    # # torch compile
-    # if cfg.use_torch_compile:
-    #     if rank == 0:
-    #         print(f"--> enabling torch compile...")
-    #     # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
-    #     torch._dynamo.config.accumulated_cache_size_limit = 128
-    #     model = torch.compile(model)
+    # torch compile
+    if cfg.use_torch_compile:
+        if rank == 0:
+            print(f"--> enabling torch compile...")
+        # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
+        torch._dynamo.config.accumulated_cache_size_limit = 128
+        model = torch.compile(model)
 
     # Optimizer
     optimizer = optim.AdamW(
@@ -177,14 +134,37 @@ def main(**kwargs):
     if cfg.training_stage == "annealing":
         schedule = lambda x: 1 - x / cfg.num_steps
     else:
-        warmup_interval = min(2000, cfg.num_steps // 20)
-        schedule = lambda x: min(
-            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-            0.1
-            + 0.5
-            * (1 - 0.1)
-            * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-        )
+        
+        # (cosine 0.01 decay)
+        # warmup_interval = min(1000, cfg.num_steps // 10)
+        # schedule = lambda x: min(
+        #     1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+        #     0.01
+        #     + 0.5
+        #     * (1 - 0.01)
+        #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+        # )
+        
+        # (constant schedule)
+        # warmup_interval = 1000  
+        # schedule = lambda x: (
+        #     min(x, warmup_interval) / warmup_interval
+        # )
+        schedule = lambda x: min(1.0, x)
+
+        # (cosine 0.1 decay)
+        # warmup_interval = min(2000, cfg.num_steps // 20)
+        # schedule = lambda x: min(
+        #     1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+        #     0.1
+        #     + 0.5
+        #     * (1 - 0.1)
+        #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+        # # )
+        
+        # linear decay to 50b tokens and then constant lr
+        # schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
+
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler
@@ -205,9 +185,6 @@ def main(**kwargs):
         checkpointer,
         start_step,
         tokens_seen,
-        pp_schedule,
-        stage_index,
-        num_stages,
     )
 
     checkpointer.save_single_file(cfg.num_steps, model)

@@ -103,11 +103,14 @@ def train(
             pp_schedule.step()
             loss = torch.tensor([-1.0]).to(local_rank)
 
-        model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        # model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 
-        print(loss.item())
+        if stage_index == num_stages - 1:
+            if local_rank == 0:
+                print(loss.item())
+                print(scheduler.get_last_lr()[0])
 
         # ddp_stats[0] += loss.item()
         # ddp_stats[2] += 1
@@ -201,10 +204,7 @@ def setup_environ_flags():
     os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
 
-def get_policies(cfg, rank, block):
-    """Get policies for mixed precision, wrapping, sharding, ac and param init function."""
-
-    # mixed precision
+def get_mixed_precision_policy(cfg, rank):
     verify_bfloat_support = (
         torch.version.cuda
         and torch.cuda.is_bf16_supported()
@@ -212,6 +212,7 @@ def get_policies(cfg, rank, block):
         and dist.is_nccl_available()
         and nccl.version() >= (2, 10)
     )
+
     if cfg.mixed_precision:
         bf16_ready = verify_bfloat_support
         if bf16_ready:
@@ -224,6 +225,15 @@ def get_policies(cfg, rank, block):
                 print(f"FP16 enabled")
     else:
         mixed_precision_policy = None
+
+    return mixed_precision_policy
+
+
+def get_policies(cfg, rank, block):
+    """Get policies for mixed precision, wrapping, sharding, ac and param init function."""
+
+    # mixed precision
+    mixed_precision_policy = get_mixed_precision_policy(cfg, rank)
 
     # wrapping policy
     wrapping_policy = get_wrapper(block)

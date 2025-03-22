@@ -2,6 +2,7 @@ import torch
 
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
+    AutoHandler,
     BufferDataset,
     CheckpointDataset,
     ParquetHandler,
@@ -16,7 +17,20 @@ from fms_fsdp.utils.dataset_utils import (
 _handler_map = {
     "arrow": ArrowHandler,
     "hf_parquet": ParquetHandler,
+    "auto": AutoHandler,
 }
+
+
+def causal_lm(data_seq, prompt_len=1):
+    """
+    Perform causal language modeling by right-shifting the input sequence.
+    Sets first prompt_len tokens to be ignored by the loss.
+    """
+    data_seq = torch.tensor(data_seq, dtype=torch.int)
+    t = data_seq.clone()[1:]
+    data_seq = data_seq[:-1]
+    t[:prompt_len] = -100
+    return data_seq, t
 
 
 def get_dummy_loader(cfg, rank, world_size):
@@ -43,7 +57,7 @@ def get_dummy_loader(cfg, rank, world_size):
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
-def get_data_loader(cfg, rank, world_size):
+def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     """
     Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training.
     Assumes underlying data is sequences of integer values.
@@ -56,20 +70,12 @@ def get_data_loader(cfg, rank, world_size):
         Rank of current distributed worker. Used for handling dataset sharding logic.
     world_size : int
         Number of distributed workers. Used for handling dataset sharding logic.
+    postprocess : List[Callable]
+        Any task-specific postprocessing to apply before handing over data. Steps will apply in
+        the order provided by the user. For CLM training, use postprocess=[causal_lm].
     """
 
-    datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
-
-    def causal_lm(data_seq, prompt_len=0):
-        """
-        Perform causal language modeling by right-shifting the input sequence.
-        Sets first prompt_len tokens to be ignored by the loss.
-        """
-        data_seq = torch.IntTensor(data_seq)
-        t = data_seq.clone()[1:]
-        data_seq = data_seq[:-1]
-        t[:prompt_len] = -100
-        return data_seq, t
+    datasets, weights, cols = parse_data_args(cfg.datasets, cfg.weights, cfg.col_name)
 
     # Base streaming dataset. Returns doc chunks in sequence.
     # Implements dataset sampling and rescalability.
@@ -80,10 +86,10 @@ def get_data_loader(cfg, rank, world_size):
     assert (
         cfg.file_type in _handler_map
     ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
-    if cfg.file_type == "hf_parquet":
-        filehandler = ParquetHandler(cfg.tokenizer_path, cfg.col_name)
+    if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
+        filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols)
     else:
-        filehandler = _handler_map[cfg.file_type](cfg.col_name)
+        filehandler = _handler_map[cfg.file_type, cols]
     # Base reader layer
     data = StreamingDocDataset(
         cfg.data_path,
@@ -114,15 +120,19 @@ def get_data_loader(cfg, rank, world_size):
     # Wrap above dataset in packing logic to form constant-length lines.
     data = BufferDataset(
         data,
-        cfg.seq_length + 1,
+        cfg.seq_length if causal_lm not in postprocess else cfg.seq_length + 1,
         bos_token=cfg.bol_token,
         eos_token=cfg.eol_token,
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
     data = PreloadBufferDataset(data, 10000)
-    # Split line into input and target for the CLM task.
-    data = PreprocessDataset(data, causal_lm)
+
+    # Apply desired postprocessing steps in sequence
+    data = PreprocessDataset(data, torch.IntTensor)
+    for p in postprocess:
+        data = PreprocessDataset(data, p)
+
     # Enable auto-saving
     data = CheckpointDataset(
         data,
@@ -131,10 +141,12 @@ def get_data_loader(cfg, rank, world_size):
         cfg.batch_size,
         cfg.ckpt_save_path,
     )
-    return torch.utils.data.DataLoader(data, num_workers=1, batch_size=cfg.batch_size)
+    return torch.utils.data.DataLoader(
+        data, num_workers=cfg.num_workers, batch_size=cfg.batch_size
+    )
 
 
-def parse_data_args(datas, weights):
+def parse_data_args(datas, weights, cols):
     # Convert csv inputs into corresponding lists of values
     def splitstrip(x):
         if isinstance(x, str):
@@ -148,4 +160,5 @@ def parse_data_args(datas, weights):
 
     datas = splitstrip(datas)
     weights = [float(x) for x in splitstrip(weights)]
-    return datas, weights
+    cols = splitstrip(cols)
+    return datas, weights, cols
