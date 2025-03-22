@@ -10,6 +10,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
 from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.pipelining import Schedule1F1B
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -80,31 +81,73 @@ def main(**kwargs):
     if rank == 0:
         print("Datasets constructed!")
 
-    # FSDP
-    model = FSDP(
+    # PP
+    num_layers = config_data.n_layer
+    num_stages = world_size
+
+    stage_layer_map = {
+        0: [0],
+        1: [1, 2],
+        2: [3, 4],
+        3: [5, 6],
+        4: [7, 8],
+        5: [9, 10],
+        6: [11, 12],
+        7: [13, 14],
+        8: [15, 16],
+        9: [17, 18],
+        10: [19, 20],
+        11: [21, 22],
+        12: [23, 24],
+        13: [25, 26],
+        14: [27, 28],
+        15: [29, 30],
+        16: [31],
+    }
+    stage_index = rank
+    if stage_index != 0:
+        model.backbone.embedding = None
+    elif stage_index != num_stages - 1:
+        model.backbone.norm_f = None
+        model.lm_head = None
+    for i in range(num_layers):
+        if i not in stage_layer_map[stage_index]:
+            del model.backbone.layers[str(i)]
+
+    print(stage_index)
+    print(model)
+
+    from torch.distributed.pipelining import PipelineStage
+    stage = PipelineStage(
         model,
-        auto_wrap_policy=wrapping_policy,
-        mixed_precision=mixed_precision_policy,
-        sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
-        device_id=torch.cuda.current_device(),
-        limit_all_gathers=True,
-        param_init_fn=param_init_fn,
+        stage_index,
+        num_stages,
+        torch.cuda.current_device(),
     )
 
-    # fsdp activation checkpointing
-    if cfg.fsdp_activation_checkpointing:
-        if rank == 0:
-            print(f"--> applying FSDP activation checkpointing...")
-        apply_selective_ac(model, p=cfg.selective_checkpointing)
+    def cross_entropy_loss(pred: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        pred = pred.logits if hasattr(pred, "logits") else pred
+        ce_loss = torch.nn.CrossEntropyLoss()
+        return ce_loss(
+            pred.view(-1, pred.size(-1)), labels.view(-1).long()
+        )
 
-    # torch compile
-    if cfg.use_torch_compile:
-        if rank == 0:
-            print(f"--> enabling torch compile...")
-        # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
-        torch._dynamo.config.accumulated_cache_size_limit = 128
-        model = torch.compile(model)
+    pp_schedule = Schedule1F1B(stage, n_microbatches=1, loss_fn=cross_entropy_loss)
+
+
+    # # fsdp activation checkpointing
+    # if cfg.fsdp_activation_checkpointing:
+    #     if rank == 0:
+    #         print(f"--> applying FSDP activation checkpointing...")
+    #     apply_selective_ac(model, p=cfg.selective_checkpointing)
+
+    # # torch compile
+    # if cfg.use_torch_compile:
+    #     if rank == 0:
+    #         print(f"--> enabling torch compile...")
+    #     # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
+    #     torch._dynamo.config.accumulated_cache_size_limit = 128
+    #     model = torch.compile(model)
 
     # Optimizer
     optimizer = optim.AdamW(
@@ -162,6 +205,9 @@ def main(**kwargs):
         checkpointer,
         start_step,
         tokens_seen,
+        pp_schedule,
+        stage_index,
+        num_stages,
     )
 
     checkpointer.save_single_file(cfg.num_steps, model)
