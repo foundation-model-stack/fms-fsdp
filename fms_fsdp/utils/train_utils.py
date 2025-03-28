@@ -73,7 +73,8 @@ def train(
                 run["hparams"] = asdict(cfg)
 
     model.train()
-    ddp_stats = torch.zeros(3).to(local_rank)
+    ddp_stats = torch.zeros(2).to(local_rank)
+    g_norms = []
 
     start = time.time()
     loop_start = time.time()
@@ -91,20 +92,20 @@ def train(
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
         loss.backward()
-        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        g_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
+        g_norms.append(g_norm.full_tensor().item())
         optimizer.step()
         scheduler.step()
 
         ddp_stats[0] += loss.item()
-        ddp_stats[2] += 1
+        ddp_stats[1] += 1
 
         if profiler:
             profiler.step()
 
         if batch_idx % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
-            train_loss = ddp_stats[0] / ddp_stats[2]
-            g_norm = ddp_stats[1] / ddp_stats[2]
+            train_loss = ddp_stats[0] / ddp_stats[1]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             new_tokens_seen = (
@@ -114,7 +115,7 @@ def train(
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
-                current_gnorm = g_norm.item()
+                current_gnorm = sum(g_norms) / len(g_norms)
                 current_step_time = (time.time() - start) / cfg.report_interval
                 overall_step_time = elapsed_time / (batch_idx - start_step)
                 current_throughput = int(
@@ -164,6 +165,7 @@ def train(
 
             start = time.time()
             ddp_stats.zero_()
+            g_norms = []
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if batch_idx % cfg.checkpoint_interval == 0:
