@@ -7,9 +7,12 @@ import torch
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mamba_ssm.modules.block import Block
 from torch import distributed as dist
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed import init_device_mesh
+from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import checkpoint_wrapper
+from torch.distributed.fsdp import MixedPrecisionPolicy
+from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed.pipelining import ScheduleGPipe
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -51,15 +54,13 @@ def main(**kwargs):
         Path.home(), ".triton", "cache", str(local_rank)
     )
 
-    # get policy
-    block = Block
-    (
-        mixed_precision_policy,
-        wrapping_policy,
-        sharding_strategy_policy,
-        apply_selective_ac,
-        param_init_fn,
-    ) = get_policies(cfg, rank, block)
+    # mesh
+    mesh = init_device_mesh("cuda", (world_size // 8, 8), mesh_dim_names=("pp", "dp"))
+    pp_mesh = mesh["pp"]
+    dp_mesh = mesh["dp"]
+    print("mesh: ", mesh)
+    print("pp mesh: ", pp_mesh)
+    print("dp mesh: ", dp_mesh)
 
     # get model
     config_data = get_model_config(cfg.model_variant)
@@ -80,23 +81,62 @@ def main(**kwargs):
     if rank == 0:
         print("Datasets constructed!")
 
+
+    # PP
+    pp_rank = pp_mesh.get_local_rank()
+    print(f"rank: {rank}, pp rank: {pp_rank}")
+    pp_size = pp_mesh.size()
+
+    stage_index = pp_rank
+    num_stages = pp_size
+
+    num_layers = len(model.backbone.layers)
+
+    stage_layer_map = {
+        0: range(0, 8),
+        1: range(8, 16),
+        2: range(16, 24),
+        3: range(24, 32),
+    }
+
+    if stage_index != 0:
+        model.backbone.embedding = None
+    if stage_index != num_stages - 1:
+        model.backbone.norm_f = None
+        model.lm_head = None
+    for i in range(num_layers):
+        if i not in stage_layer_map[stage_index]:
+            del model.backbone.layers[str(i)]
+
+
+    # AC
+    if cfg.fsdp_activation_checkpointing:
+        for layer_index, block in model.backbone.layers.items():
+            model.backbone.layers[layer_index] = checkpoint_wrapper(block, preserve_rng_state=False)
+
     # FSDP
-    model = FSDP(
+    mp_policy = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16)
+    for layer_index, block in model.backbone.layers.items():
+        fully_shard(block, mesh=dp_mesh, mp_policy=mp_policy, reshard_after_forward=False)
+    fully_shard(model, mesh=dp_mesh, mp_policy=mp_policy, reshard_after_forward=False)
+
+    print("stage index: ", stage_index, model)
+
+    from torch.distributed.pipelining import PipelineStage
+    stage = PipelineStage(
         model,
-        auto_wrap_policy=wrapping_policy,
-        mixed_precision=mixed_precision_policy,
-        sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
-        device_id=torch.cuda.current_device(),
-        limit_all_gathers=True,
-        param_init_fn=param_init_fn,
+        stage_index,
+        num_stages,
+        torch.device(f"cuda:{local_rank}"),
+        group=pp_mesh.get_group("pp"),
     )
 
-    # fsdp activation checkpointing
-    if cfg.fsdp_activation_checkpointing:
-        if rank == 0:
-            print(f"--> applying FSDP activation checkpointing...")
-        apply_selective_ac(model, p=cfg.selective_checkpointing)
+    def cross_entropy_loss(pred: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.cross_entropy(
+            pred.view(-1, pred.size(-1)), labels.view(-1).long()
+        )
+
+    pp_schedule = ScheduleGPipe(stage, n_microbatches=4, loss_fn=cross_entropy_loss)
 
     # torch compile
     if cfg.use_torch_compile:
@@ -171,6 +211,9 @@ def main(**kwargs):
         checkpointer,
         start_step,
         tokens_seen,
+        pp_schedule,
+        stage_index,
+        num_stages,
     )
 
     checkpointer.save_single_file(cfg.num_steps, model)

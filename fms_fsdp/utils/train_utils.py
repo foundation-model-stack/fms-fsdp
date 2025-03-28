@@ -30,6 +30,9 @@ def train(
     checkpointer,
     start_step,
     tokens_seen,
+    pp_schedule,
+    stage_index,
+    num_stages,
 ):
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
@@ -85,13 +88,27 @@ def train(
         label = label.to(local_rank)
 
         optimizer.zero_grad()
-        output = model(input)
-        output = output.logits if hasattr(output, "logits") else output
-        ce_loss = torch.nn.CrossEntropyLoss()
-        loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
-        loss.backward()
-        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        if stage_index == 0:
+            # first stage has input, but no target and no losses
+            pp_schedule.step(input)
+            loss = torch.tensor([-1.0]).to(local_rank)
+        elif stage_index == num_stages - 1:
+            # last stage has no input, but target and loss holder
+            losses = []
+            pp_schedule.step(target=label, losses=losses)
+            loss = torch.mean(torch.stack(losses)).to(local_rank)
+        else:
+            # middle stages has no input, no target and no loss
+            pp_schedule.step()
+            loss = torch.tensor([-1.0]).to(local_rank)
+
+        if stage_index == num_stages - 1:
+            if local_rank == 0:
+                print(loss.item())
+                print(scheduler.get_last_lr()[0])
+
+        ddp_stats[1] += torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 
