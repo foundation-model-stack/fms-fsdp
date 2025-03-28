@@ -73,13 +73,14 @@ def train(
                 run["hparams"] = asdict(cfg)
 
     model.train()
-    ddp_stats = torch.zeros(3).to(local_rank)
+    ddp_stats = torch.zeros(2).to(local_rank)
+    g_norms = []
 
     start = time.time()
     loop_start = time.time()
     train_loss = -1
-    for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
-        if batch_idx > cfg.num_steps:
+    for current_step, (input, label) in enumerate(train_loader, start=start_step + 1):
+        if current_step > cfg.num_steps:
             break
         input = input.to(local_rank)
         label = label.to(local_rank)
@@ -91,32 +92,32 @@ def train(
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
         loss.backward()
-        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        g_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
+        g_norms.append(g_norm.full_tensor().item())
         optimizer.step()
         scheduler.step()
 
         ddp_stats[0] += loss.item()
-        ddp_stats[2] += 1
+        ddp_stats[1] += 1
 
         if profiler:
             profiler.step()
 
-        if batch_idx % cfg.report_interval == 0:
+        if current_step % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
-            train_loss = ddp_stats[0] / ddp_stats[2]
-            g_norm = ddp_stats[1] / ddp_stats[2]
+            train_loss = ddp_stats[0] / ddp_stats[1]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             new_tokens_seen = (
-                (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
+                (current_step - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
-                current_gnorm = g_norm.item()
+                current_gnorm = sum(g_norms) / len(g_norms)
                 current_step_time = (time.time() - start) / cfg.report_interval
-                overall_step_time = elapsed_time / (batch_idx - start_step)
+                overall_step_time = elapsed_time / (current_step - start_step)
                 current_throughput = int(
                     cfg.batch_size * cfg.seq_length / current_step_time
                 )
@@ -130,7 +131,7 @@ def train(
                     device=torch.cuda.current_device()
                 )
 
-                print("step:", batch_idx)
+                print("step:", current_step)
                 print("loss:", current_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
@@ -160,19 +161,20 @@ def train(
                         tracker_fn = wandb.log
                     elif cfg.tracker == "aim":
                         tracker_fn = run.track
-                    tracker_fn(vals_to_track, step=batch_idx)
+                    tracker_fn(vals_to_track, step=current_step)
 
             start = time.time()
             ddp_stats.zero_()
+            g_norms = []
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if batch_idx % cfg.checkpoint_interval == 0:
+        if current_step % cfg.checkpoint_interval == 0:
+            train_state = {"step": current_step, "ntokens": tokens_seen + new_tokens_seen}
             checkpointer.save(
-                batch_idx,
+                current_step,
                 model,
                 optimizer,
-                None,
-                tokens_seen=tokens_seen + new_tokens_seen,
+                train_state
             )
 
     return train_loss

@@ -13,8 +13,6 @@ import torch
 import torch.utils.data as data
 from transformers import AutoTokenizer  # type: ignore
 
-from fms_fsdp.utils.checkpointing_utils import get_latest
-
 
 """
 The following distributed dataloaders are designed around 3 main principles:
@@ -40,6 +38,16 @@ then applying some sort of post-processing and yielding the result. Users build 
 pipelines by wrapping a base `_StatefulDataset` in any number of `_WrapperDataset` layers, 
 which is then passed to the torch DataLoader. 
 """
+
+
+def get_latest(dir_, key=os.path.getctime):
+    if os.path.exists(dir_) and len(os.listdir(dir_)) > 0:
+        latest = max(
+            [os.path.join(dir_, x) for x in os.listdir(dir_)],
+            key=key,
+        )
+        return latest
+    return None
 
 
 def _shard_partition(itemlist: List[Any], rank: int, worldsize: int) -> List[Any]:
