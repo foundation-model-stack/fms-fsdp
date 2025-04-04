@@ -59,8 +59,8 @@ def main(**kwargs):
     # os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     torch.cuda.manual_seed(cfg.seed)
     torch.manual_seed(cfg.seed)
-    # os.environ["PYTHONHASHSEED"] = str(cfg.seed % 2 ** 32)
-    # torch.distributed.tensor._random.manual_seed(cfg.seed, mesh)
+    os.environ["PYTHONHASHSEED"] = str(cfg.seed % 2 ** 32)
+    torch.distributed.tensor._random.manual_seed(cfg.seed, mesh)
 
     # get model
     config_data = get_model_config(cfg.model_variant)
