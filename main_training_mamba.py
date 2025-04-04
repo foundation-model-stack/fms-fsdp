@@ -53,7 +53,7 @@ def main(**kwargs):
         mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp_shard",))
 
     # set deterministic
-    # torch.use_deterministic_algorithms(True)
+    torch.use_deterministic_algorithms(True)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
