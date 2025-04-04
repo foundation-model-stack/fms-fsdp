@@ -53,14 +53,14 @@ def main(**kwargs):
         mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp_shard",))
 
     # set deterministic
-    torch.use_deterministic_algorithms(True)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    # torch.use_deterministic_algorithms(True)
+    # torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False
+    # os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     torch.cuda.manual_seed(cfg.seed)
     torch.manual_seed(cfg.seed)
-    os.environ["PYTHONHASHSEED"] = str(cfg.seed % 2 ** 32)
-    torch.distributed.tensor._random.manual_seed(cfg.seed, mesh)
+    # os.environ["PYTHONHASHSEED"] = str(cfg.seed % 2 ** 32)
+    # torch.distributed.tensor._random.manual_seed(cfg.seed, mesh)
 
     # get model
     config_data = get_model_config(cfg.model_variant)
