@@ -410,7 +410,7 @@ class ParquetHandler(_ShardFileHandler):
         print(len(document_str))
         
         if len(document_str) > 150000:
-            return ''
+            return None
         
         doc = self.tokenizer(str(reader[index]))["input_ids"]
         
