@@ -114,7 +114,8 @@ def main(**kwargs):
     params_without_decay = []
     for name, param in model.named_parameters():
         print(f'{name=}')
-        if 'A_log' in name or 'D' in name or 'dt_bias' in name:
+        suff = name.split('.')[-1]
+        if 'A_log' in suff or 'D' in suff or 'dt_bias' in suff:
             params_without_decay.append(param)
         else:
             params_with_decay.append(param)
