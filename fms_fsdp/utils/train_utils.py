@@ -2,7 +2,6 @@ import os
 from dataclasses import asdict
 from functools import partial
 
-
 try:
     import packaging.version
 except ImportError:
@@ -30,6 +29,7 @@ def train(
     checkpointer,
     start_step,
     tokens_seen,
+    cp_degree: int = 1,
 ):
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
@@ -44,7 +44,7 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             if rank == 0:
-                print(f"--> wandb is enabled!")
+                print("--> wandb is enabled!")
                 try:
                     wandb.init(
                         project=project_name,
@@ -64,7 +64,7 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to aim but aim is not installed.")
             if rank == 0:
-                print(f"--> aim is enabled!")
+                print("--> aim is enabled!")
                 run = Run(
                     experiment=project_name,
                     repo=tracker_dir,
@@ -89,8 +89,9 @@ def train(
         output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
-
+        loss = loss + .0001 * torch.logsumexp(output, dim=-1).pow(2).mean()
         loss.backward()
+
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
@@ -108,7 +109,11 @@ def train(
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             new_tokens_seen = (
-                (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
+                (batch_idx - start_step)
+                * world_size
+                * cfg.batch_size
+                * cfg.seq_length
+                // cp_degree
             )
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
@@ -118,10 +123,10 @@ def train(
                 current_step_time = (time.time() - start) / cfg.report_interval
                 overall_step_time = elapsed_time / (batch_idx - start_step)
                 current_throughput = int(
-                    cfg.batch_size * cfg.seq_length / current_step_time
+                    cfg.batch_size * cfg.seq_length / cp_degree / current_step_time
                 )
                 overall_throughput = int(
-                    cfg.batch_size * cfg.seq_length / overall_step_time
+                    cfg.batch_size * cfg.seq_length / cp_degree / overall_step_time
                 )
                 reserved_mem = torch.cuda.max_memory_reserved(
                     device=torch.cuda.current_device()
@@ -145,6 +150,7 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
+                print(f"Total tok/step: {world_size * cfg.batch_size * cfg.seq_length}")
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,
@@ -201,11 +207,11 @@ def get_mixed_precision_policy(cfg, rank):
         if bf16_ready:
             mixed_precision_policy = bfSixteen
             if rank == 0:
-                print(f"bFloat16 enabled for mixed precision - using bfSixteen policy")
+                print("bFloat16 enabled for mixed precision - using bfSixteen policy")
         else:
             mixed_precision_policy = fpSixteen
             if rank == 0:
-                print(f"FP16 enabled")
+                print("FP16 enabled")
     else:
         mixed_precision_policy = None
 
