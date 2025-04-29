@@ -745,6 +745,8 @@ class DocSliceDataset(_WrapperDataset):
                     last_delim = i+1
             doclist.append(inp[last_delim:])
             # Pull out any short caps
+            begin = []
+            end = []
             if len(doclist[0])//3 <= self.overlap:
                 begin = doclist[0]
                 doclist = doclist[1:]
