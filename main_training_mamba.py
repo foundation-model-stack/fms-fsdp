@@ -86,7 +86,7 @@ def main(**kwargs):
         auto_wrap_policy=wrapping_policy,
         mixed_precision=mixed_precision_policy,
         sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
+        use_orig_params=True,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
@@ -107,8 +107,31 @@ def main(**kwargs):
         model = torch.compile(model)
 
     # Optimizer
+    # optimizer = optim.AdamW(
+    #     model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+    # )
+    params_with_decay = []
+    params_without_decay = []
+    for name, param in model.named_parameters():
+        suff = name.split('.')[-1]
+        if 'A_log' in suff or 'D' in suff or 'dt_bias' in suff:
+            params_without_decay.append(param)
+        else:
+            params_with_decay.append(param)
+
     optimizer = optim.AdamW(
-        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+        [
+            {
+                "params": params_with_decay,
+                "weight_decay": 0.1,
+            },
+            {
+                "params": params_without_decay,
+                "weight_decay": 0.,
+            },
+        ],
+        betas = (0.9, 0.95),
+        lr = cfg.learning_rate, # cfg.learning_rate,
     )
 
     # optionally load from checkpoint (when continue pretraining)
@@ -135,8 +158,9 @@ def main(**kwargs):
     # LR schedule
     # linear decay for annealing
     if cfg.training_stage == "annealing":
-        schedule = lambda x: 1 - x / cfg.num_steps
-    else:
+        warmup_interval = 1000
+        schedule = lambda x: x / warmup_interval if x < warmup_interval else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+    elif cfg.training_stage == "cosine":
         # cosine decay
         warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
@@ -146,6 +170,11 @@ def main(**kwargs):
             * (1 - 0.1)
             * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         )
+    elif cfg.training_stage == "constant":
+        warmup_interval = 2000
+        schedule = lambda x: (min(x, warmup_interval) / warmup_interval)
+    else:
+        schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
