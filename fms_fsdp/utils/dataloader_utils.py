@@ -88,8 +88,9 @@ def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
     if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
         filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols)
-    else:
-        filehandler = _handler_map[cfg.file_type, cols]
+    elif cfg.file_type == "arrow":
+        filehandler = _handler_map[cfg.file_type](cols)
+        
     # Base reader layer
     data = StreamingDocDataset(
         cfg.data_path,
