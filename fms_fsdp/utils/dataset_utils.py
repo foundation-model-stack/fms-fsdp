@@ -1387,7 +1387,7 @@ class SamplingDataset(_WrapperDataset):
         self.tokens_seen = [0] * len(self.datasets)
 
         self.current_iterator = -1
-        self.state_params = ["current_iterator"]
+        self.state_params = ["current_iterator", "tokens_seen"]
 
     def setup(self):
         if not self.is_setup:
