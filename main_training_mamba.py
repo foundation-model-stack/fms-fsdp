@@ -113,7 +113,6 @@ def main(**kwargs):
     params_with_decay = []
     params_without_decay = []
     for name, param in model.named_parameters():
-        print(f'{name=}')
         suff = name.split('.')[-1]
         if 'A_log' in suff or 'D' in suff or 'dt_bias' in suff:
             params_without_decay.append(param)
@@ -143,9 +142,11 @@ def main(**kwargs):
         model,
         optimizer,
         None,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/")
-        if not os.path.isfile(cfg.ckpt_load_path)
-        else cfg.ckpt_load_path,
+        path=(
+            os.path.join(cfg.ckpt_load_path, "checkpoints/")
+            if not os.path.isfile(cfg.ckpt_load_path)
+            else cfg.ckpt_load_path
+        ),
         strict=False,
     )
     if not is_resuming:
