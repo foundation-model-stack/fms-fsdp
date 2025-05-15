@@ -172,6 +172,15 @@ def main(**kwargs):
     elif cfg.training_stage == "constant":
         warmup_interval = 2000
         schedule = lambda x: (min(x, warmup_interval) / warmup_interval)
+    elif cfg.training_stage == "linear_to_constant":
+        linear_steps = 25000
+        start_lr = 2e-4
+        end_lr = 2e-4
+        schedule = lambda x: (start_lr + (end_lr - start_lr) * min(x - start_step, linear_steps) / linear_steps) / cfg.learning_rate
+    elif cfg.training_stage == "annealing_with_specified_decay_steps":
+        warmup_interval = 2000
+        total_decay_steps = 25000
+        schedule = lambda x: (x - start_step) / warmup_interval if x - start_step < warmup_interval else max(0.0, 1 - (x - start_step - warmup_interval) / total_decay_steps)
     else:
         schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
 
