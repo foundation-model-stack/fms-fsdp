@@ -1389,6 +1389,9 @@ class ScalableShardDataset(_WrapperDataset):
                     )
             [d.setup() for d in self.data]
             self.n_docs_remaining = [d._len for d in self.data]
+            assert (
+                sum(self.n_docs_remaining) > 0
+            ), f"No documents detected in shard {self.rank} of {self.datapath}"
 
             self.generator = torch.Generator().manual_seed(self.rank)
 
@@ -1396,14 +1399,15 @@ class ScalableShardDataset(_WrapperDataset):
         self.setup()
         # Grab one doc at a time in random order
         data = [iter(d) for d in self.data]
+        # Reset if we're rescaling into a prematurely finished epoch
+        # (i.e. [1,1,0,0,0,0] into [1,1,0] [0,0,0] )
+        if sum(self.n_docs_remaining) == 0:
+            self.n_docs_remaining = [d._len for d in self.data]
         while True:
             # Sample logical shard (or load from ckp)
             if self.current_reader is not None:
                 ind = self.current_reader
             else:
-                assert (
-                    sum(self.n_docs_remaining) > 0
-                ), f"No documents detected in {self.datapath}"
                 ind = torch.multinomial(
                     torch.tensor(self.n_docs_remaining, dtype=torch.float),
                     1,
