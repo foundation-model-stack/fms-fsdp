@@ -15,9 +15,6 @@ from transformers import AutoTokenizer  # type: ignore
 
 from fms_fsdp.utils.checkpointing_utils import get_latest
 
-# TODO: titan PR adds
-# TODO: zero-len file asserts/check
-
 """
 The following distributed dataloaders are designed around 3 main principles:
 
@@ -1274,10 +1271,8 @@ class StreamingDocDataset(_StatefulDataset):
             newpath = os.path.join(self.datapath, shardid)
             path, reader = self._get_reader(path, newpath, reader)
             doc = self.filehandler.get(reader, docid, self.drop)
-            if len(doc) == 0:
-                continue
             doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
-            if doclen >= self.min_length:
+            if len(doc) > 0 and doclen >= self.min_length:
                 n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):
                     self.chunk_index = j
