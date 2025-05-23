@@ -74,7 +74,6 @@ class train_config:
     stage2_seq_length: int = 256
 
     # FIM training
-    fim_training: bool = False
     psm_rate: float = 0.0
     spm_rate: float = 0.0
     fim_pre: int = 1
