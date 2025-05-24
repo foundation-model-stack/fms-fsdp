@@ -1123,21 +1123,20 @@ class StreamingDocDataset(_StatefulDataset):
                     ]
                 tally += shard_sizes[i]
                 # Count file exists, use it
-                if len(countfiles) > 0:
-                    with open(countpath, "r") as csvfile:
-                        reader = csv.DictReader(csvfile)
-                        for row in reader:
-                            fullpath = row["dataset/filename"]
-                            prefix = fullpath.find(dataset)
-                            if prefix >= 0:
-                                key = fullpath[prefix + len(dataset) + 1 :]
-                                doc_counts[key] = int(row["documents"])
-                else:
-                    # Count file does not exist, touch every owned file for length
-                    doc_counts = {
-                        shard: self.filehandler.length(os.path.join(datapath, shard))
-                        for shard in shardset
-                    }
+                with open(countpath, "r") as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        fullpath = row["dataset/filename"]
+                        prefix = fullpath.find(dataset)
+                        if prefix >= 0:
+                            key = fullpath[prefix + len(dataset) + 1 :]
+                            doc_counts[key] = int(row["documents"])
+            else:
+                # Count file does not exist, touch every owned file for length
+                doc_counts = {
+                    shard: self.filehandler.length(os.path.join(datapath, shard))
+                    for shard in shardset
+                }
 
             # Assemble doc list for each file shard
             # Create docset of form [shardid, min docid, max docid]
