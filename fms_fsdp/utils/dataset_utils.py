@@ -933,8 +933,6 @@ class StreamingDocDataset(_StatefulDataset):
                 pathsplit = os.path.split(pathsplit[0])
             pardir, dataset = pathsplit
             self.dataset = dataset
-
-            print(f"printing datapath for this file: {datapath}")
             
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
