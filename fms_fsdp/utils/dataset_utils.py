@@ -355,10 +355,6 @@ class ArrowHandler(_ShardFileHandler):
         return self.open(path).num_record_batches
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
-<<<<<<< HEAD
-=======
-        assert index < reader.num_record_batches, f"Illegal index {index} in set of {reader.num_record_batches} documents"
->>>>>>> parent of 15f4d7e (Blacking)
         frame = reader.get_batch(index)
         
         doc = None
@@ -386,11 +382,7 @@ class ParquetHandler(_ShardFileHandler):
     before getting/slicing. However, this is a standard and widely-used data format.
     """
 
-<<<<<<< HEAD
     def __init__(self, tokenizer_path: str, col_names: List[str] = ["text"]):
-=======
-    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"]):
->>>>>>> parent of 15f4d7e (Blacking)
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.col_names = col_names
 
@@ -411,16 +403,11 @@ class ParquetHandler(_ShardFileHandler):
         return pq.read_metadata(path).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
-<<<<<<< HEAD
         
         document_str = str(reader[index])
         
         doc = self.tokenizer(str(reader[index]))["input_ids"]
         
-=======
-        assert index < reader.length(), f"Illegal index {index} in set of {reader.length()} documents"
-        doc = self.tokenizer(str(reader[index])[:1_000_000])["input_ids"]
->>>>>>> parent of 15f4d7e (Blacking)
         if len(doc) > 0 and doc[0] in drop_tokens:
             doc = doc[1:]
         # Recheck len for edge case where doc=[eos]
