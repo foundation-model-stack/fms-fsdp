@@ -5,7 +5,6 @@ from fms_fsdp.utils.dataset_utils import (
     AutoHandler,
     BufferDataset,
     CheckpointDataset,
-    FIMDataset,
     ParquetHandler,
     PreloadBufferDataset,
     PreprocessDataset,
@@ -58,9 +57,9 @@ def get_dummy_loader(cfg, rank, world_size):
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
-def get_data_loader(cfg, rank, world_size):
+def get_data_loader(cfg, rank, world_size, postprocess=[causal_lm]):
     """
-    Pytorch dataloader for stateful, distributed, and rescalable language model training.
+    Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training.
     Assumes underlying data is sequences of integer values.
     ...
     Args
@@ -71,11 +70,10 @@ def get_data_loader(cfg, rank, world_size):
         Rank of current distributed worker. Used for handling dataset sharding logic.
     world_size : int
         Number of distributed workers. Used for handling dataset sharding logic.
+    postprocess : List[Callable]
+        Any task-specific postprocessing to apply before handing over data. Steps will apply in
+        the order provided by the user. For CLM training, use postprocess=[causal_lm].
     """
-
-    fim_training = cfg.psm_rate + cfg.spm_rate > 0
-    if fim_training:
-        assert cfg.bos_token is None, "No BOS in FIM training. Did you mean fim_pre?"
 
     datasets, weights, cols = parse_data_args(cfg.datasets, cfg.weights, cfg.col_name)
 
@@ -91,7 +89,7 @@ def get_data_loader(cfg, rank, world_size):
     if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
         filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols)
     else:
-        filehandler = _handler_map[cfg.file_type](cols)
+        filehandler = _handler_map[cfg.file_type, cols]
     # Base reader layer
     data = StreamingDocDataset(
         cfg.data_path,
@@ -120,10 +118,9 @@ def get_data_loader(cfg, rank, world_size):
         verbose=(rank == 0),
     )
     # Wrap above dataset in packing logic to form constant-length lines.
-    # Increment seq len to counteract CLM's one token removal.
     data = BufferDataset(
         data,
-        cfg.seq_length + 1,
+        cfg.seq_length if causal_lm not in postprocess else cfg.seq_length + 1,
         bos_token=cfg.bol_token,
         eos_token=cfg.eol_token,
         pack_hard=True,
@@ -131,23 +128,10 @@ def get_data_loader(cfg, rank, world_size):
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
     data = PreloadBufferDataset(data, 10000)
 
-    # Apply FIM transformation if needed
-    if fim_training:
-        data = FIMDataset(
-            data,
-            cfg.eos_token,
-            cfg.psm_rate,
-            cfg.spm_rate,
-            pre_token=cfg.fim_pre,
-            mid_token=cfg.fim_mid,
-            suf_token=cfg.fim_suf,
-        )
-
-    # Transform to tensors
+    # Apply desired postprocessing steps in sequence
     data = PreprocessDataset(data, torch.IntTensor)
-
-    # Apply CLM transformation
-    data = PreprocessDataset(data, causal_lm)
+    for p in postprocess:
+        data = PreprocessDataset(data, p)
 
     # Enable auto-saving
     data = CheckpointDataset(
