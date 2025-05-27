@@ -382,16 +382,20 @@ class ArrowHandler(_ShardFileHandler):
 class ParquetHandler(_ShardFileHandler):
     """
     Reader for indexable parquet shard files, common in HF datasets.
-    Here we assume reasonably small shard files (<5Gb) and documents (<100k tokens),
+    Here we assume reasonably small shard files (<5Gb) and truncate docs to max_doclen characters,
     as we rely on parquet/pandas for efficient file reading, and tokenize entire documents
     before getting/slicing. However, this is a standard and widely-used data format.
     """
 
     def __init__(
-        self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"]
+        self,
+        tokenizer_path: str,
+        col_names: List[str] = ["text", "contents", "tokens"],
+        max_doclen: int = 1_000_000,
     ):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.col_names = col_names
+        self.max_doclen = max_doclen
 
     def is_legal(self, filepath: str):
         return "parquet" in os.path.splitext(filepath)[1]
@@ -415,7 +419,7 @@ class ParquetHandler(_ShardFileHandler):
         assert (
             index < reader.length()
         ), f"Illegal index {index} in set of {reader.length()} documents"
-        doc = self.tokenizer(str(reader[index])[:1_000_000])["input_ids"]
+        doc = self.tokenizer(str(reader[index])[: self.max_doclen])["input_ids"]
         if len(doc) > 0 and doc[0] in drop_tokens:
             doc = doc[1:]
         # Recheck len for edge case where doc=[eos]
@@ -429,9 +433,12 @@ class ParquetHandler(_ShardFileHandler):
 
 class AutoHandler(_ShardFileHandler):
     def __init__(
-        self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"]
+        self,
+        tokenizer_path: str,
+        col_names: List[str] = ["text", "contents", "tokens"],
+        max_doclen: int = 1_000_000,
     ):
-        self.PHandler = ParquetHandler(tokenizer_path, col_names)
+        self.PHandler = ParquetHandler(tokenizer_path, col_names, max_doclen)
         self.AHandler = ArrowHandler(col_names)
         self.current = _ShardFileHandler()
 

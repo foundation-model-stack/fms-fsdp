@@ -89,7 +89,9 @@ def get_data_loader(cfg, rank, world_size):
         cfg.file_type in _handler_map
     ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
     if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
-        filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols)
+        filehandler = _handler_map[cfg.file_type](
+            cfg.tokenizer_path, cols, cfg.doc_cutoff
+        )
     else:
         filehandler = _handler_map[cfg.file_type](cols)
     # Base reader layer
