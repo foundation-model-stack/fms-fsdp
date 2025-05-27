@@ -72,7 +72,9 @@ def get_data_loader(cfg, rank, world_size):
     world_size : int
         Number of distributed workers. Used for handling dataset sharding logic.
     """
-    if cfg.fim_training:
+
+    fim_training = cfg.psm_rate + cfg.spm_rate > 0
+    if fim_training:
         assert cfg.bos_token is None, "No BOS in FIM training. Did you mean fim_pre?"
 
     datasets, weights, cols = parse_data_args(cfg.datasets, cfg.weights, cfg.col_name)
@@ -87,8 +89,10 @@ def get_data_loader(cfg, rank, world_size):
         cfg.file_type in _handler_map
     ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
     if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
-        filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols)
-    elif cfg.file_type == "arrow":
+        filehandler = _handler_map[cfg.file_type](
+            cfg.tokenizer_path, cols, cfg.doc_cutoff
+        )
+    else:
         filehandler = _handler_map[cfg.file_type](cols)
         
     # Base reader layer
@@ -131,7 +135,7 @@ def get_data_loader(cfg, rank, world_size):
     data = PreloadBufferDataset(data, 10000)
 
     # Apply FIM transformation if needed
-    if cfg.fim_training:
+    if fim_training:
         data = FIMDataset(
             data,
             cfg.eos_token,
