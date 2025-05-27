@@ -1013,7 +1013,7 @@ class StreamingDocDataset(_StatefulDataset):
         seed: int = 42,
         min_length: int = 1,
         max_chunksize: int = 1024,
-        max_consecutive_chunks: int = 64,
+        max_consecutive_chunks: int = 256,
         verbose: bool = False,
     ):
         super().__init__(datapath, rank, worldsize)
@@ -1080,9 +1080,11 @@ class StreamingDocDataset(_StatefulDataset):
             # listdir, assemble shardfraglist (ind -> shard, frag)
             shards = [
                 os.path.join(root, name)[len(datapath) + 1 :]
-                for root, dirs, files in os.walk(datapath, topdown=False)
+                for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True)
                 for name in files
                 if self.filehandler.is_legal(os.path.join(root, name))
+                and os.path.getsize(os.path.join(root, name)) > 1_000_000
+                # 1mb minimum file size to prevent empty files
             ]
             shards.sort()  # Ensure consistent sharding across machines
 
@@ -1531,7 +1533,7 @@ class SamplingDataset(_WrapperDataset):
         self.tokens_seen = [0] * len(self.datasets)
 
         self.current_iterator = -1
-        self.state_params = ["tokens_seen", "current_iterator"]
+        self.state_params = ["current_iterator", "tokens_seen"]
 
     def setup(self):
         if not self.is_setup:

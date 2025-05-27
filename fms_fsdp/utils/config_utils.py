@@ -175,7 +175,7 @@ def get_model_config(model_variant):
                 "num_heads_kv": 8,
                 "out_proj_bias": False,
                 "qkv_proj_bias": False,
-                "rotary_emb_dim": 64,
+                "rotary_emb_dim": 0,
             },
             "rms_norm": True,
             "residual_in_fp32": True,
