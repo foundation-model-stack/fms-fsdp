@@ -412,6 +412,7 @@ def train_speculator(
 
         if (
             batch_idx % cfg.checkpoint_interval == 0
+            or batch_idx == cfg.num_steps
             or do_ckpt(cfg.ckpt_save_path) is True
         ):
             torch.cuda.empty_cache()
@@ -424,13 +425,6 @@ def train_speculator(
             )
             torch.cuda.empty_cache()
             do_ckpt(cfg.ckpt_save_path, reset=True)
-
-    checkpointer.save_single_file(
-        batch_idx,
-        speculator,
-        tokens_seen=elapsed_tokens + n_tok,
-        is_compiled=cfg.use_torch_compile,
-    )
 
 
 class EmbedGPTBigCode(GPTBigCode):
