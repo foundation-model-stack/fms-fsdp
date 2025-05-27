@@ -1129,6 +1129,10 @@ class StreamingDocDataset(_StatefulDataset):
                         min(max((end - tally) / shard_sizes[i], 0), 1),
                     ]
                 tally += shard_sizes[i]
+
+            # Assemble length of each owned shard file
+            doc_counts = {}
+            if len(countfiles) > 0:
                 # Count file exists, use it
                 with open(countpath, "r") as csvfile:
                     reader = csv.DictReader(csvfile)
