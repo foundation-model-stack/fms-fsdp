@@ -43,20 +43,27 @@ def train(
                 import wandb  # type: ignore
             except ImportError:
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
+            # dist.barrier()
             if rank == 0:
-                print(f"--> wandb is enabled!")
+                print(f"--> Started initializing wandb", flush=True)
                 try:
                     wandb.init(
                         project=project_name,
                         dir=tracker_dir,
                         resume="allow",
                         id=run_id,
+                        # mode='offline',
+                        settings=wandb.Settings(
+                                init_timeout=3600,
+                            )
                     )
                 except wandb.errors.UsageError:
                     raise ValueError(
                         "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                     )
                 wandb.config = asdict(cfg)
+                print(f"--> wandb is enabled!", flush=True)
+            # dist.barrier()
 
         if cfg.tracker == "aim":
             try:
@@ -89,6 +96,7 @@ def train(
         output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+        loss = loss + .0001 * torch.logsumexp(output, dim=-1).pow(2).mean()
 
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
@@ -101,7 +109,7 @@ def train(
         if profiler:
             profiler.step()
 
-        if batch_idx % cfg.report_interval == 0:
+        if batch_idx % cfg.report_interval == 0 or batch_idx == start_step + 1:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             train_loss = ddp_stats[0] / ddp_stats[2]
             g_norm = ddp_stats[1] / ddp_stats[2]
@@ -145,7 +153,7 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
-                if cfg.tracker:
+                if cfg.tracker and batch_idx > start_step + 1:
                     vals_to_track = {
                         "learning rate": current_lr,
                         "loss": current_loss,
