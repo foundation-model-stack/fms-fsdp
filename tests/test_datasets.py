@@ -632,6 +632,10 @@ def test_multi_reload_stress():
     # preload / sample / scale / doc pipeline
     multi_reload_stress_check(lambda: d6(d5(d4())))
 
+    # Add FIM dataset
+    d7 = lambda x: [FIMDataset(d, -1, 0.25, 0.25, 10, -2, -3, -4) for d in x]
+    multi_reload_stress_check(lambda: d7(d6(d5(d4()))))
+
 
 # SCALABLEDATASET TESTS
 
