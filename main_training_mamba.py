@@ -12,6 +12,10 @@ from torch import distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
 
+import logging
+logging.basicConfig()
+logging.getLogger().setLevel(logging.INFO)
+
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
