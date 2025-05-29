@@ -29,6 +29,7 @@ class train_config:
     logical_shards: int = 1024
     num_workers: int = 1
     doc_cutoff: int = 1_000_000
+    doc_breakpoint: int = 65_536
 
     # fsdp policies
     sharding_strategy: str = "hsdp"
