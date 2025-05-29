@@ -1,4 +1,5 @@
 import torch
+from math import ceil
 
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
@@ -104,6 +105,7 @@ def get_data_loader(cfg, rank, world_size):
         bos_token=cfg.bos_token,
         strip_tokens=set(droplist),
         min_length=3,
+        max_consecutive_chunks=ceil(cfg.doc_breakpoint/1024),
         seed=cfg.seed,
     )
     # Add rescaling/resharding
