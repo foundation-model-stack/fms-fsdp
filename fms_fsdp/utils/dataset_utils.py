@@ -408,7 +408,7 @@ class ParquetHandler(_ShardFileHandler):
     def length(self, path: str):
         return pq.read_metadata(path).num_rows
 
-     def get(self, reader, index: int, drop_tokens: Set):
+    def get(self, reader, index: int, drop_tokens: Set):
         assert (
             index < reader.length()
         ), f"Illegal index {index} in set of {reader.length()} documents"
