@@ -408,11 +408,15 @@ class ParquetHandler(_ShardFileHandler):
     def length(self, path: str):
         return pq.read_metadata(path).num_rows
 
-    def get(self, reader, index: int, drop_tokens: Set):
-
+     def get(self, reader, index: int, drop_tokens: Set):
+        assert (
+            index < reader.length()
+        ), f"Illegal index {index} in set of {reader.length()} documents"
+        doc = self.tokenizer(str(reader[index])[: self.max_doclen])["input_ids"]
         if len(doc) > 0 and doc[0] in drop_tokens:
             doc = doc[1:]
         # Recheck len for edge case where doc=[eos]
+        if len(doc) > 0 and doc[-1] in drop_tokens:
             doc = doc[:-1]
         return doc
 
