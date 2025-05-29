@@ -180,16 +180,20 @@ class _StatefulDataset(data.IterableDataset):
             self.load_worldsize = len(state_dicts)
             state_dicts = _shard_inclusive(state_dicts, self.rank, self.worldsize)
         if self.load_worldsize == self.worldsize:
-            [
-                setattr(self, flag, state_dicts[0][self.statename(flag)])
-                for flag in self.state_params + self.reshard_params
-            ]
+            for flag in self.state_params + self.reshard_params:
+                if self.statename(flag) in state_dicts[0]:
+                    setattr(self, flag, state_dicts[0][self.statename(flag)])
+                elif self.rank == 0:
+                    logging.warning(f"Dataloader state key {self.statename(flag)} not present in checkpoint!")
         else:
             for flag in self.reshard_params:
-                reshard = self._reshard(
-                    [sd[self.statename(flag)] for sd in state_dicts]
-                )
-                setattr(self, flag, reshard)
+                if self.statename(flag) in state_dicts[0]:
+                    reshard = self._reshard(
+                        [sd[self.statename(flag)] for sd in state_dicts]
+                    )
+                    setattr(self, flag, reshard)
+                elif self.rank == 0:
+                    logging.warning(f"Dataloader state key {self.statename(flag)} not present in checkpoint!")
         return state_dicts
 
     def load_from_path(self, path: str):
