@@ -1,5 +1,6 @@
 import fire
 import torch
+from fms.models.hf import HFAdaptedLLaMAForCausalLM
 from fms.models.hf.utils import to_hf_api
 from fms.models.llama import LLaMA
 from torch.distributed._shard.checkpoint import FileSystemReader, load_state_dict
@@ -8,12 +9,11 @@ from transformers import LlamaConfig, LlamaForCausalLM
 from fms_fsdp.utils.config_utils import get_model_config
 
 
-def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
-    fms_hf_model = to_hf_api(model)
+def convert_to_hf(model: LLaMA, tokenizer) -> LlamaForCausalLM:
+    fms_hf_model = HFAdaptedLLaMAForCausalLM.from_fms_model(model)
     hf_config = fms_hf_model.config
-    if "llama3" in model_variant:
-        hf_config.bos_token_id = 128000
-        hf_config.eos_token_id = 128001
+    hf_config.bos_token_id = tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id
+    hf_config.eos_token_id = tokenizer.eos_token_id
     oss_hf_model = LlamaForCausalLM(
         LlamaConfig(
             vocab_size=hf_config.vocab_size,
@@ -42,22 +42,21 @@ def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
 
     # compute the freq from rot_emb since it is gathered lazily
     rot_emb = fms_hf_model.decoder.model.rot_emb
-    max_seq_len = rot_emb.max_seq_len
-    alpha = rot_emb._alpha(max_seq_len)
-    ratio = rot_emb.ratio
-    dim = rot_emb.dim
-    if rot_emb.ntk_scaling:
-        ratio = ratio * alpha ** (dim / (dim - 2))
-    freqs = 1.0 / (ratio ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    max_seq_len = rot_emb.rope_scaling.orig_max_seq_len
+    alpha = rot_emb.rope_scaling.get_alpha(max_seq_len)
+    freqs = rot_emb.rope_scaling.compute_scaled_freqs(
+        oss_hf_model.model.rotary_emb.inv_freq.device, alpha
+    )
 
     with torch.no_grad():
         oss_hf_model.model.embed_tokens.weight.copy_(fms_hf_model.embedding.weight)
+        oss_hf_model.model.rotary_emb.inv_freq = freqs
         i = 0
         for oss_hf_layer in oss_hf_model.model.layers:
             fms_hf_layer = fms_hf_model.decoder.model.layers[i]
 
-            # self attn
-            if is_old_fms:
+            # non-fused attn
+            if hasattr(fms_hf_layer.attn, 'query'):
                 oss_hf_layer.self_attn.q_proj.weight.copy_(
                     fms_hf_layer.attn.query.weight
                 )
@@ -65,7 +64,9 @@ def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
                 oss_hf_layer.self_attn.v_proj.weight.copy_(
                     fms_hf_layer.attn.value.weight
                 )
-            else:
+                oss_hf_layer.self_attn.o_proj.weight.copy_(fms_hf_layer.attn.dense.weight)
+            # fused attn
+            elif hasattr(fms_hf_layer.attn.in_proj, 'qkv_fused'):
                 q, k, v = torch.split(
                     fms_hf_layer.attn.in_proj.qkv_fused.weight,
                     fms_hf_layer.attn.in_proj.splits,
@@ -74,18 +75,21 @@ def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
                 oss_hf_layer.self_attn.q_proj.weight.copy_(q)
                 oss_hf_layer.self_attn.k_proj.weight.copy_(k)
                 oss_hf_layer.self_attn.v_proj.weight.copy_(v)
-            oss_hf_layer.self_attn.o_proj.weight.copy_(fms_hf_layer.attn.dense.weight)
-            oss_hf_layer.self_attn.rotary_emb.inv_freqs = freqs
+                oss_hf_layer.self_attn.o_proj.weight.copy_(fms_hf_layer.attn.dense.weight)
+            else:
+                raise ValueError("not detecting valid attention keys.")
 
-            # mlp
-            if is_old_fms:
+            # non-fused mlp
+            if hasattr(fms_hf_layer.ff_sub_layer, 'wg'):
                 oss_hf_layer.mlp.gate_proj.weight.copy_(
                     fms_hf_layer.ff_sub_layer.wg.weight
                 )
                 oss_hf_layer.mlp.up_proj.weight.copy_(
                     fms_hf_layer.ff_sub_layer.w1.weight
                 )
-            else:
+                oss_hf_layer.mlp.down_proj.weight.copy_(fms_hf_layer.ff_sub_layer.w2.weight)
+            # fused mlp
+            elif hasattr(fms_hf_layer.ff_sub_layer, 'wg1_fused'):
                 wg1_fused = fms_hf_layer.ff_sub_layer.wg1_fused.weight
                 wg_splits = [wg1_fused.size(0) // 2, wg1_fused.size(0) // 2]
                 wg, w1 = torch.split(
@@ -93,7 +97,9 @@ def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
                 )
                 oss_hf_layer.mlp.gate_proj.weight.copy_(wg)
                 oss_hf_layer.mlp.up_proj.weight.copy_(w1)
-            oss_hf_layer.mlp.down_proj.weight.copy_(fms_hf_layer.ff_sub_layer.w2.weight)
+                oss_hf_layer.mlp.down_proj.weight.copy_(fms_hf_layer.ff_sub_layer.w2.weight)
+            else:
+                raise ValueError("not detecting valid mlp keys.")
 
             # layer norm
             oss_hf_layer.input_layernorm.weight.copy_(fms_hf_layer.ln.weight)
@@ -131,8 +137,13 @@ def convert_to_hf(model: LLaMA, model_variant, is_old_fms) -> LlamaForCausalLM:
 
 
 def main(
-    model_variant, compiled, is_old_fms, load_path, save_path, tokenizer_name_or_path
+    model_variant, compiled, load_path, save_path, tokenizer_name_or_path
 ):
+    print("Copying tokenizer...")
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
+    tokenizer.save_pretrained(save_path)
+
     print("Initializing model...")
     llama_config = get_model_config(model_variant)
     with torch.device("meta"):
@@ -155,14 +166,8 @@ def main(
         model.load_state_dict(state_dict["model_state"]["_orig_mod"])
 
     print("Converting to HF model..")
-    hf_model = convert_to_hf(model, model_variant, is_old_fms)
+    hf_model = convert_to_hf(model, tokenizer)
     hf_model.save_pretrained(save_path)
-
-    print("Copying tokenizer...")
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
-    tokenizer.save_pretrained(save_path)
 
     print(f"Model converted to HF model, saving at {save_path}")
 
