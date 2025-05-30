@@ -31,6 +31,7 @@ class Checkpointer:
             return model, optimizer, train_state
         self.report(f"Prior checkpoint {self.checkpoint_id} detected.")
         start_time = time.monotonic()
+        print(model.state_dict().keys())
         state_dict = {
             "model_state": model.state_dict(),
             "optim_state": optimizer.state_dict(),
@@ -66,6 +67,7 @@ class Checkpointer:
             "optim_state": optim_state,
             "train_state": train_state,
         }
+        print(model_state.keys())
         dcp.save(state_dict=state_dict, checkpoint_id=checkpoint_id)
         self.report(
             f"checkpoint saved in {checkpoint_id} in {time.monotonic() - start_time:.2f} seconds."
