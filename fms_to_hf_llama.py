@@ -3,7 +3,9 @@ import torch
 from fms.models.hf import HFAdaptedLLaMAForCausalLM
 from fms.models.llama import LLaMA
 from torch.distributed._shard.checkpoint import FileSystemReader, load_state_dict
+from torch.distributed.checkpoint.state_dict import set_model_state_dict, StateDictOptions
 from transformers import LlamaConfig, LlamaForCausalLM
+import torch.distributed.checkpoint as dcp
 
 from fms_fsdp.utils.config_utils import get_model_config
 
@@ -136,7 +138,7 @@ def convert_to_hf(model: LLaMA, tokenizer) -> LlamaForCausalLM:
 
 
 def main(
-    model_variant, compiled, load_path, save_path, tokenizer_name_or_path
+    model_variant, load_path, save_path, tokenizer_name_or_path
 ):
     print("Copying tokenizer...")
     from transformers import AutoTokenizer
@@ -150,19 +152,11 @@ def main(
     model.to_empty(device="cpu")
 
     print(f"Reading state dict from {load_path}")
-    if not compiled:
-        state_dict = {"model_state": model.state_dict()}
-    else:
-        state_dict = {"model_state": {"_orig_mod": model.state_dict()}}
-    load_state_dict(
-        state_dict=state_dict, storage_reader=FileSystemReader(load_path), no_dist=True
-    )
+    state_dict = {"model_state": model.state_dict()}
+    dcp.load(state_dict=state_dict, checkpoint_id=load_path)
 
     print("Loading state dict into the model...")
-    if not compiled:
-        model.load_state_dict(state_dict["model_state"])
-    else:
-        model.load_state_dict(state_dict["model_state"]["_orig_mod"])
+    set_model_state_dict(model, state_dict["model_state"], options=StateDictOptions(strict=False))
 
     print("Converting to HF model..")
     hf_model = convert_to_hf(model, tokenizer)
