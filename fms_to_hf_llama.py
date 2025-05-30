@@ -1,13 +1,15 @@
 import fire
 import torch
+import torch.distributed.checkpoint as dcp
 from fms.models.hf import HFAdaptedLLaMAForCausalLM
 from fms.models.llama import LLaMA
-from torch.distributed._shard.checkpoint import FileSystemReader, load_state_dict
 from torch.distributed.checkpoint.state_dict import set_model_state_dict, StateDictOptions
 from transformers import LlamaConfig, LlamaForCausalLM
-import torch.distributed.checkpoint as dcp
 
 from fms_fsdp.utils.config_utils import get_model_config
+
+
+# python fms_to_hf_llama.py --model_variant llama3_3.2b_4k --load_path xxx --save_path xxx --tokenizer_name_or_path /datasets/tokenizers/llama3
 
 
 def convert_to_hf(model: LLaMA, tokenizer) -> LlamaForCausalLM:
