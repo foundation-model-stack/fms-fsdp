@@ -107,24 +107,18 @@ def main(**kwargs):
         model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
     )
 
-    # optionally load from checkpoint (when continue pretraining)
-    checkpointer = Checkpointer(
-        cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
-    )
-    model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
+    # Train State
+    train_state = {"step": 0, "ntokens": 0}
+
+    # Load from checkpoint (when continue pretraining)
+    checkpointer = Checkpointer(cfg.ckpt_save_path)
+    model, optimizer, train_state = checkpointer.load(
         model,
         optimizer,
-        None,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/")
-        if not os.path.isfile(cfg.ckpt_load_path)
-        else cfg.ckpt_load_path,
-        strict=False,
+        train_state,
     )
-    if not is_resuming:
-        start_step = 0
-        # Override loaded optim hyperparams with the current values
-        for g in optimizer.param_groups:
-            g["initial_lr"] = cfg.learning_rate
+    start_step = train_state["step"]
+    tokens_seen = train_state["ntokens"]
 
     # LR schedule
     # linear decay for annealing
@@ -172,8 +166,6 @@ def main(**kwargs):
         start_step,
         tokens_seen,
     )
-
-    checkpointer.save_single_file(cfg.num_steps, model)
 
     dist.barrier()
     dist.destroy_process_group()
