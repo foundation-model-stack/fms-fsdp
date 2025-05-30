@@ -7,27 +7,25 @@ import torch
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mamba_ssm.modules.block import Block
 from torch import distributed as dist
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed import init_device_mesh
+from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+    checkpoint_wrapper,
+)
+from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
-from fms_fsdp import config
-from fms_fsdp.utils.checkpointing_utils import Checkpointer
-from fms_fsdp.utils.config_utils import get_model_config, update_config
+from fms_fsdp.utils.checkpoint import Checkpointer
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
-from fms_fsdp.utils.train_utils import (
-    get_policies,
-    get_profiler,
-    setup,
-    setup_environ_flags,
-    train,
-)
+from fms_fsdp.utils.model_configs import get_model_config, update_config
+from fms_fsdp.utils.train_config import train_config
+from fms_fsdp.utils.train_utils import get_profiler, setup, setup_environ_flags, train
 
 
 def main(**kwargs):
     # get configs
-    cfg = config.train_config()
+    cfg = train_config()
     update_config(cfg, **kwargs)
 
     # ensure reproducibility
@@ -51,16 +49,6 @@ def main(**kwargs):
         Path.home(), ".triton", "cache", str(local_rank)
     )
 
-    # get policy
-    block = Block
-    (
-        mixed_precision_policy,
-        wrapping_policy,
-        sharding_strategy_policy,
-        apply_selective_ac,
-        param_init_fn,
-    ) = get_policies(cfg, rank, block)
-
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
@@ -80,23 +68,31 @@ def main(**kwargs):
     if rank == 0:
         print("Datasets constructed!")
 
-    # FSDP
-    model = FSDP(
-        model,
-        auto_wrap_policy=wrapping_policy,
-        mixed_precision=mixed_precision_policy,
-        sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
-        device_id=torch.cuda.current_device(),
-        limit_all_gathers=True,
-        param_init_fn=param_init_fn,
-    )
-
-    # fsdp activation checkpointing
+    # AC
     if cfg.fsdp_activation_checkpointing:
-        if rank == 0:
-            print(f"--> applying FSDP activation checkpointing...")
-        apply_selective_ac(model, p=cfg.selective_checkpointing)
+        for layer_index, block in enumerate(model.backbone.layers):
+            model.backbone.layers[layer_index] = checkpoint_wrapper(
+                block, preserve_rng_state=False
+            )
+
+    # FSDP
+    if cfg.sharding_strategy == "hsdp":
+        mesh = init_device_mesh(
+            "cuda", (world_size // 8, 8), mesh_dim_names=("dp_replicate", "dp_shard")
+        )
+    else:
+        mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp_shard",))
+    mp_policy = MixedPrecisionPolicy(
+        param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
+    )
+    for layer_index, block in enumerate(model.backbone.layers):
+        fully_shard(
+            block,
+            mesh=mesh,
+            mp_policy=mp_policy,
+            reshard_after_forward=layer_index < len(model.backbone.layers) - 1,
+        )
+    fully_shard(model, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=False)
 
     # torch compile
     if cfg.use_torch_compile:
@@ -111,30 +107,28 @@ def main(**kwargs):
         model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
     )
 
-    # optionally load from checkpoint (when continue pretraining)
-    checkpointer = Checkpointer(
-        cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
-    )
-    model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
+    # Train State
+    train_state = {"step": 0, "ntokens": 0}
+
+    # Load from checkpoint (when continue pretraining)
+    checkpointer = Checkpointer(cfg.ckpt_save_path)
+    model, optimizer, train_state = checkpointer.load(
         model,
         optimizer,
-        None,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/")
-        if not os.path.isfile(cfg.ckpt_load_path)
-        else cfg.ckpt_load_path,
-        strict=False,
+        train_state,
     )
-    if not is_resuming:
-        start_step = 0
-        # Override loaded optim hyperparams with the current values
-        for g in optimizer.param_groups:
-            g["initial_lr"] = cfg.learning_rate
+    start_step = train_state["step"]
+    tokens_seen = train_state["ntokens"]
 
     # LR schedule
     # linear decay for annealing
     if cfg.training_stage == "annealing":
         warmup_interval = 1000
-        schedule = lambda x: x / warmup_interval if x < warmup_interval else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+        schedule = (
+            lambda x: x / warmup_interval
+            if x < warmup_interval
+            else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+        )
     elif cfg.training_stage == "cosine":
         # cosine decay
         warmup_interval = min(2000, cfg.num_steps // 20)
@@ -172,8 +166,6 @@ def main(**kwargs):
         start_step,
         tokens_seen,
     )
-
-    checkpointer.save_single_file(cfg.num_steps, model)
 
     dist.barrier()
     dist.destroy_process_group()

@@ -13,8 +13,6 @@ import torch
 import torch.utils.data as data
 from transformers import AutoTokenizer  # type: ignore
 
-from fms_fsdp.utils.checkpointing_utils import get_latest
-
 
 """
 The following distributed dataloaders are designed around 3 main principles:
@@ -40,6 +38,16 @@ then applying some sort of post-processing and yielding the result. Users build 
 pipelines by wrapping a base `_StatefulDataset` in any number of `_WrapperDataset` layers, 
 which is then passed to the torch DataLoader. 
 """
+
+
+def get_latest(dir_, key=os.path.getctime):
+    if os.path.exists(dir_) and len(os.listdir(dir_)) > 0:
+        latest = max(
+            [os.path.join(dir_, x) for x in os.listdir(dir_)],
+            key=key,
+        )
+        return latest
+    return None
 
 
 def _shard_partition(itemlist: List[Any], rank: int, worldsize: int) -> List[Any]:
@@ -345,7 +353,7 @@ class ArrowHandler(_ShardFileHandler):
 
     def __init__(self, col_names: List[str] = ["tokens"]):
         self.col_names = col_names
-        
+
     def is_legal(self, filepath: str):
         return "arrow" in os.path.splitext(filepath)[1]
 
@@ -357,13 +365,15 @@ class ArrowHandler(_ShardFileHandler):
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
         frame = reader.get_batch(index)
-        
+
         doc = None
         for name in self.col_names:
             if name in frame.column_names:
                 doc = frame[name]
                 break
-        assert doc is not None, f"None of column names {self.col_names} found in file headers {frame.column_names}"
+        assert (
+            doc is not None
+        ), f"None of column names {self.col_names} found in file headers {frame.column_names}"
         if len(doc) > 0 and doc[0].as_py() in drop_tokens:
             doc = doc.slice(1, len(doc) - 1)
         # Recheck len for edge case where doc=[eos]
@@ -397,18 +407,19 @@ class ParquetHandler(_ShardFileHandler):
             if name in names:
                 match = name
                 break
-        assert match is not None, f"None of column names {self.col_names} found in file headers {names}"
+        assert (
+            match is not None
+        ), f"None of column names {self.col_names} found in file headers {names}"
         return pq.read_pandas(path, columns=[match], partitioning=None)[match]
 
     def length(self, path: str):
         return pq.read_metadata(path).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
-        
         document_str = str(reader[index])
-        
+
         doc = self.tokenizer(str(reader[index]))["input_ids"]
-        
+
         if len(doc) > 0 and doc[0] in drop_tokens:
             doc = doc[1:]
         # Recheck len for edge case where doc=[eos]
@@ -421,7 +432,9 @@ class ParquetHandler(_ShardFileHandler):
 
 
 class AutoHandler(_ShardFileHandler):
-    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"]):
+    def __init__(
+        self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"]
+    ):
         self.PHandler = ParquetHandler(tokenizer_path, col_names)
         self.AHandler = ArrowHandler(col_names)
         self.current = _ShardFileHandler()
@@ -1152,7 +1165,9 @@ class StreamingDocDataset(_StatefulDataset):
                     yield self._construct_chunk(j, doc, n_chunks)
 
             # Check that epoch was non-empty
-            assert self.has_yielded, f"Empty logical shard detected: {self.dataset, self.docset}"
+            assert (
+                self.has_yielded
+            ), f"Empty logical shard detected: {self.dataset, self.docset}"
 
     def load_state_dict(self, state_dicts, sharded_input=False):
         self.setup()

@@ -3,7 +3,7 @@ from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from torch.distributed._shard.checkpoint import FileSystemReader, load_state_dict
 
-from fms_fsdp.utils.config_utils import get_model_config
+from fms_fsdp.utils.model_configs import get_model_config
 
 
 def main(model_variant, load_path, save_path, tokenizer_name_or_path):
