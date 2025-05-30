@@ -90,6 +90,7 @@ def main(**kwargs):
     fully_shard(model, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=False)
 
     # init model
+    model.to_empty(device="cuda")
     model.reset_parameters()
 
     # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
