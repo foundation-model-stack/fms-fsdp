@@ -46,12 +46,8 @@ def main(**kwargs):
 
     # get fms model
     llama_config = get_model_config(cfg.model_variant)
-    if cfg.low_cpu_fsdp:
-        with torch.device("meta"):
-            model = LLaMA(llama_config)
-    else:
+    with torch.device("meta"):
         model = LLaMA(llama_config)
-        model.reset_parameters()
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -93,6 +89,9 @@ def main(**kwargs):
         )
     fully_shard(model, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=False)
 
+    # init model
+    model.reset_parameters()
+
     # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
     model.rot_emb.compute_freqs_cis(
         torch.device("cuda", torch.cuda.current_device()),
@@ -113,7 +112,7 @@ def main(**kwargs):
     # Train State
     train_state = {"step": 0, "ntokens": 0}
 
-    # Load from checkpoint (when continue pretraining)
+    # Load from checkpoint
     checkpointer = Checkpointer(cfg.ckpt_save_path)
     model, optimizer, train_state = checkpointer.load(
         model,
