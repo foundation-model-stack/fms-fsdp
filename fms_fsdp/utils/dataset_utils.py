@@ -1156,10 +1156,9 @@ class StreamingDocDataset(_StatefulDataset):
                 ndocs = doc_counts[shard]
                 if ndocs > 0:
                     doc_start = int(ndocs * shardset[shard][0])
-                    doc_end = int(ndocs * shardset[shard][1]) - 1
-                    # doc_end = max(
-                    #     doc_start, int(ndocs * shardset[shard][1]) - 1
-                    # )  # inclusive upper bound
+                    doc_end = max(
+                        doc_start, int(ndocs * shardset[shard][1]) - 1
+                    )  # inclusive upper bound
                     self.docset.append([shard, doc_start, doc_end])
                     doccount += doc_end - doc_start + 1
             self._len = doccount
@@ -1168,9 +1167,6 @@ class StreamingDocDataset(_StatefulDataset):
                 logging.info(
                     f"    Worker {self.rank} ingested {len(self.docset)} shard fragments from {dataset}"
                 )
-
-            if self.rank==10:
-                print(shardset, self.docset)
 
             # Shuffle shard files - guaranteed inconsistent across workers
             seed = self.seed + self.rank
