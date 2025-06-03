@@ -377,14 +377,20 @@ class ArrowHandler(_ShardFileHandler):
 class ParquetHandler(_ShardFileHandler):
     """
     Reader for indexable parquet shard files, common in HF datasets.
-    Here we assume reasonably small shard files (<5Gb) and documents (<100k tokens),
+    Here we assume reasonably small shard files (<5Gb) and truncate docs to max_doclen characters,
     as we rely on parquet/pandas for efficient file reading, and tokenize entire documents
     before getting/slicing. However, this is a standard and widely-used data format.
     """
 
-    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text"]):
+    def __init__(
+        self,
+        tokenizer_path: str,
+        col_names: List[str] = ["text", "contents", "tokens"],
+        max_doclen: int = 1_000_000,
+    ):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.col_names = col_names
+        self.max_doclen = max_doclen
 
     def is_legal(self, filepath: str):
         return "parquet" in os.path.splitext(filepath)[1]
@@ -403,11 +409,10 @@ class ParquetHandler(_ShardFileHandler):
         return pq.read_metadata(path).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
-        
-        document_str = str(reader[index])
-        
-        doc = self.tokenizer(str(reader[index]))["input_ids"]
-        
+        assert (
+            index < reader.length()
+        ), f"Illegal index {index} in set of {reader.length()} documents"
+        doc = self.tokenizer(str(reader[index])[: self.max_doclen])["input_ids"]
         if len(doc) > 0 and doc[0] in drop_tokens:
             doc = doc[1:]
         # Recheck len for edge case where doc=[eos]
@@ -420,8 +425,13 @@ class ParquetHandler(_ShardFileHandler):
 
 
 class AutoHandler(_ShardFileHandler):
-    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"]):
-        self.PHandler = ParquetHandler(tokenizer_path, col_names)
+    def __init__(
+        self,
+        tokenizer_path: str,
+        col_names: List[str] = ["text", "contents", "tokens"],
+        max_doclen: int = 1_000_000,
+    ):
+        self.PHandler = ParquetHandler(tokenizer_path, col_names, max_doclen)
         self.AHandler = ArrowHandler(col_names)
         self.current = _ShardFileHandler()
 
@@ -965,6 +975,43 @@ class StreamingDocDataset(_StatefulDataset):
             if len(countfiles) > 0:
                 # Count file exists, use it
                 countpath = os.path.join(pardir, "meta", countfiles[0])
+            else:
+                countpath = ""
+
+            # Use shard file sizes to perform partitioning
+            # Create shardlist of form shardid -> [start%, end%]
+            if len(countfiles) > 0:
+                sizes = {}
+                with open(countpath, "r") as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        fullpath = row["dataset/filename"]
+                        prefix = fullpath.find(dataset + "/")
+                        if prefix >= 0:
+                            key = fullpath[prefix + len(dataset) + 1 :]
+                            sizes[key] = int(row["size"])
+                shard_sizes = [sizes[shard] for shard in shards]
+            else:
+                shard_sizes = [
+                    os.path.getsize(os.path.join(datapath, shard)) for shard in shards
+                ]
+            shard_sizes = [s / sum(shard_sizes) for s in shard_sizes]
+            start = self.rank / self.worldsize
+            end = (self.rank + 1) / self.worldsize
+            shardset = {}
+            tally = 0
+            for i in range(len(shards)):
+                if tally <= end and tally + shard_sizes[i] >= start:
+                    shardset[shards[i]] = [
+                        min(max((start - tally) / shard_sizes[i], 0), 1),
+                        min(max((end - tally) / shard_sizes[i], 0), 1),
+                    ]
+                tally += shard_sizes[i]
+
+            # Assemble length of each owned shard file
+            doc_counts = {}
+            if len(countfiles) > 0:
+                # Count file exists, use it
                 with open(countpath, "r") as csvfile:
                     reader = csv.DictReader(csvfile)
                     for row in reader:
