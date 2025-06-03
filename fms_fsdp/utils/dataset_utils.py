@@ -1168,6 +1168,9 @@ class StreamingDocDataset(_StatefulDataset):
                     f"    Worker {self.rank} ingested {len(self.docset)} shard fragments from {dataset}"
                 )
 
+            if self.rank==10:
+                print(shardset, self.docset)
+
             # Shuffle shard files - guaranteed inconsistent across workers
             seed = self.seed + self.rank
             random.seed(seed)
