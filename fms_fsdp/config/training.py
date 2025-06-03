@@ -15,7 +15,9 @@ class train_config:
     file_type: str = "arrow"
     col_name: str = "tokens"
     tokenizer_path: str = "/fsx/tokenizer"
-    datasets: str = "lang=en/dataset=commoncrawl,lang=en/dataset=webhose,lang=en/dataset=github_clean,lang=de/dataset=wikipedia,lang=es/dataset=wikipedia,lang=fr/dataset=wikipedia,lang=ja/dataset=wikipedia,lang=pt/dataset=wikipedia,lang=en/dataset=wikimedia,lang=en/dataset=uspto,lang=en/dataset=pubmedcentral,lang=en/dataset=arxiv,lang=en/dataset=stackexchange"
+    datasets: str = (
+        "lang=en/dataset=commoncrawl,lang=en/dataset=webhose,lang=en/dataset=github_clean,lang=de/dataset=wikipedia,lang=es/dataset=wikipedia,lang=fr/dataset=wikipedia,lang=ja/dataset=wikipedia,lang=pt/dataset=wikipedia,lang=en/dataset=wikimedia,lang=en/dataset=uspto,lang=en/dataset=pubmedcentral,lang=en/dataset=arxiv,lang=en/dataset=stackexchange"
+    )
     weights: str = "7725,500,550,28,17,22,25,8,100,500,175,250,100"
     seq_length: int = 4096
     vocab_size: int = 32000
@@ -26,6 +28,8 @@ class train_config:
     strip_tokens: str = ""
     logical_shards: int = 1024
     num_workers: int = 1
+    doc_cutoff: int = 1_000_000
+    doc_breakpoint: int = 65_536
 
     # fsdp policies
     sharding_strategy: str = "hsdp"
@@ -72,3 +76,10 @@ class train_config:
     stage2_prompt_length: int = 64
     stage2_batch_size: int = 96
     stage2_seq_length: int = 256
+
+    # FIM training
+    psm_rate: float = 0.0
+    spm_rate: float = 0.0
+    fim_pre: int = 1
+    fim_mid: int = 2
+    fim_suf: int = 3
