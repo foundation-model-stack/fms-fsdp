@@ -35,7 +35,7 @@ class train_config:
     sharding_strategy: str = "hsdp"
     fsdp_activation_checkpointing: bool = False
     selective_checkpointing: Union[float, str] = 1  # percentage of blocks to apply ac
-    mixed_precision: bool = True
+    mixed_precision: bool = False
     low_cpu_fsdp: bool = False
 
     # training spec
