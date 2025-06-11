@@ -86,7 +86,7 @@ def main(**kwargs):
         auto_wrap_policy=wrapping_policy,
         mixed_precision=mixed_precision_policy,
         sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
+        use_orig_params=True,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
@@ -107,8 +107,35 @@ def main(**kwargs):
         model = torch.compile(model)
 
     # Optimizer
+    # optimizer = optim.AdamW(
+    #     model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+    # )
+    params_with_decay = []
+    params_without_decay = []
+    for name, param in model.named_parameters():
+        print(f'{name=}')
+        if 'A_log' in name or 'D' in name or 'dt_bias' in name:
+            params_without_decay.append(param)
+        else:
+            params_with_decay.append(param)
+
+
+    print(f'{params_with_decay=}')
+    print(f'{params_without_decay=}')
+
     optimizer = optim.AdamW(
-        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+        [
+            {
+                "params": params_with_decay,
+                "weight_decay": 0.1,
+            },
+            {
+                "params": params_without_decay,
+                "weight_decay": 0.,
+            },
+        ],
+        betas = (0.9, 0.95),
+        lr = cfg.learning_rate, # cfg.learning_rate,
     )
 
     # optionally load from checkpoint (when continue pretraining)
