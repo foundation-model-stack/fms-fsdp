@@ -675,10 +675,9 @@ class PreloadBufferDataset(_WrapperDataset):
 
     def __iter__(self):
         dataset = iter(self.dataset)
+        # Pad out buffer if needed
+        self._pad_buffer()
         while True:
-            # Pad out buffer if needed
-            self._pad_buffer()
-
             # If buffer is undersized, add a datapoint
             if self.buffer_size < self.window_size:
                 self.buffer[self.buffer_size] = next(dataset)

@@ -147,8 +147,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree):
         cfg.eos_token,
         slice_rate=.75,
     )
-
-        # Apply FIM transformation if needed
+    # Apply FIM transformation if needed
     if fim_training:
         data = FIMDataset(
             data,
@@ -159,10 +158,10 @@ def get_data_loader(cfg, rank, world_size, dp_degree):
             mid_token=cfg.fim_mid,
             suf_token=cfg.fim_suf,
         )
-
     # Transform to tensors
     data = PreprocessDataset(data, torch.IntTensor)
-    
+    # Apply CLM transformation
+    data = PreprocessDataset(data, causal_lm)
     # Apply CP chunking if using CP
     if do_cp:
         def chunk(x):
