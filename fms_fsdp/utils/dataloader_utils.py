@@ -6,6 +6,7 @@ from fms_fsdp.utils.dataset_utils import (
     BufferDataset,
     CheckpointDataset,
     DocSliceDataset,
+    FIMDataset,
     ParquetHandler,
     PreloadBufferDataset,
     PreprocessDataset,
@@ -13,6 +14,7 @@ from fms_fsdp.utils.dataset_utils import (
     ScalableShardDataset,
     StreamingDocDataset,
 )
+from math import ceil
 
 
 _handler_map = {
@@ -58,9 +60,9 @@ def get_dummy_loader(cfg, rank, world_size):
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
-def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
+def get_data_loader(cfg, rank, world_size, dp_degree):
     """
-    Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training.
+    Pytorch dataloader for stateful, distributed, and rescalable language model training.
     Assumes underlying data is sequences of integer values.
     ...
     Args
@@ -71,9 +73,6 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         Rank of current distributed worker. Used for handling dataset sharding logic.
     world_size : int
         Number of distributed workers. Used for handling dataset sharding logic.
-    postprocess : List[Callable]
-        Any task-specific postprocessing to apply before handing over data. Steps will apply in
-        the order provided by the user. For CLM training, use postprocess=[causal_lm].
     """
 
     do_cp = False
@@ -83,6 +82,10 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         cp_rank = rank % cp_worldsize
         world_size = dp_degree
         rank = rank // cp_worldsize
+
+    fim_training = cfg.psm_rate + cfg.spm_rate > 0
+    if fim_training:
+        assert cfg.bos_token is None, "No BOS in FIM training. Did you mean fim_pre?"
 
     datasets, weights, cols = parse_data_args(cfg.datasets, cfg.weights, cfg.col_name)
 
@@ -96,7 +99,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         cfg.file_type in _handler_map
     ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
     if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
-        filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols)
+        filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols, cfg.doc_cutoff)
     else:
         filehandler = _handler_map[cfg.file_type](cols)
     # Base reader layer
@@ -111,6 +114,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         min_length=cfg.target_doclen,
         seed=cfg.seed,
         filter_exp=cfg.filter_exp,
+        max_consecutive_chunks=ceil(cfg.doc_breakpoint/1024),
     )
     # Add rescaling/resharding
     data = ScalableShardDataset(
@@ -130,7 +134,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
     # Wrap above dataset in packing logic to form constant-length lines.
     data = BufferDataset(
         data,
-        cfg.seq_length if causal_lm not in postprocess else cfg.seq_length + 1,
+        cfg.seq_length + 1,
         bos_token=cfg.bol_token,
         eos_token=cfg.eol_token,
         pack_hard=True,
@@ -144,11 +148,21 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         slice_rate=.75,
     )
 
-    # Apply desired postprocessing steps in sequence
-    data = PreprocessDataset(data, torch.IntTensor)
-    for p in postprocess:
-        data = PreprocessDataset(data, p)
+        # Apply FIM transformation if needed
+    if fim_training:
+        data = FIMDataset(
+            data,
+            cfg.eos_token,
+            cfg.psm_rate,
+            cfg.spm_rate,
+            pre_token=cfg.fim_pre,
+            mid_token=cfg.fim_mid,
+            suf_token=cfg.fim_suf,
+        )
 
+    # Transform to tensors
+    data = PreprocessDataset(data, torch.IntTensor)
+    
     # Apply CP chunking if using CP
     if do_cp:
         def chunk(x):

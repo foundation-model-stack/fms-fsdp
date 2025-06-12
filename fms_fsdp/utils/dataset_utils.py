@@ -180,16 +180,20 @@ class _StatefulDataset(data.IterableDataset):
             self.load_worldsize = len(state_dicts)
             state_dicts = _shard_inclusive(state_dicts, self.rank, self.worldsize)
         if self.load_worldsize == self.worldsize:
-            [
-                setattr(self, flag, state_dicts[0][self.statename(flag)])
-                for flag in self.state_params + self.reshard_params
-            ]
+            for flag in self.state_params + self.reshard_params:
+                if self.statename(flag) in state_dicts[0]:
+                    setattr(self, flag, state_dicts[0][self.statename(flag)])
+                elif self.rank == 0:
+                    logging.warning(f"Dataloader state key {self.statename(flag)} not present in checkpoint!")
         else:
             for flag in self.reshard_params:
-                reshard = self._reshard(
-                    [sd[self.statename(flag)] for sd in state_dicts]
-                )
-                setattr(self, flag, reshard)
+                if self.statename(flag) in state_dicts[0]:
+                    reshard = self._reshard(
+                        [sd[self.statename(flag)] for sd in state_dicts]
+                    )
+                    setattr(self, flag, reshard)
+                elif self.rank == 0:
+                    logging.warning(f"Dataloader state key {self.statename(flag)} not present in checkpoint!")
         return state_dicts
 
     def load_from_path(self, path: str):
@@ -343,8 +347,8 @@ class ArrowHandler(_ShardFileHandler):
     Non-standard data format, though.
     """
 
-    def __init__(self, col_name: List[str] = ["tokens"]):
-        self.col_name = col_name
+    def __init__(self, col_names: List[str] = ["text", "contents", "tokens"]):
+        self.col_names = col_names
 
     def is_legal(self, filepath: str):
         return "arrow" in os.path.splitext(filepath)[1]
@@ -356,13 +360,18 @@ class ArrowHandler(_ShardFileHandler):
         return self.open(path).num_record_batches
 
     def get(self, reader: pa.RecordBatchFileReader, index: int, drop_tokens: Set):
+        assert (
+            index < reader.num_record_batches
+        ), f"Illegal index {index} in set of {reader.num_record_batches} documents"
         frame = reader.get_batch(index)
         doc = None
-        for name in self.col_name:
+        for name in self.col_names:
             if name in frame.column_names:
                 doc = frame[name]
                 break
-        assert doc is not None, f"None of column names {self.col_name} found in file headers {frame.column_names}"
+        assert (
+            doc is not None
+        ), f"None of column names {self.col_names} found in file headers {frame.column_names}"
         if len(doc) > 0 and doc[0].as_py() in drop_tokens:
             doc = doc.slice(1, len(doc) - 1)
         # Recheck len for edge case where doc=[eos]
@@ -377,14 +386,15 @@ class ArrowHandler(_ShardFileHandler):
 class ParquetHandler(_ShardFileHandler):
     """
     Reader for indexable parquet shard files, common in HF datasets.
-    Here we assume reasonably small shard files (<5Gb) and documents (<100k tokens),
+    Here we assume reasonably small shard files (<5Gb) and truncate docs to max_doclen characters,
     as we rely on parquet/pandas for efficient file reading, and tokenize entire documents
     before getting/slicing. However, this is a standard and widely-used data format.
     """
 
-    def __init__(self, tokenizer_path: str, col_name: List[str] = ["text"]):
+    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"], max_doclen: int = 1_000_000):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-        self.col_name = col_name
+        self.col_names = col_names
+        self.max_doclen = max_doclen
 
     def is_legal(self, filepath: str):
         return "parquet" in os.path.splitext(filepath)[1]
@@ -392,18 +402,21 @@ class ParquetHandler(_ShardFileHandler):
     def open(self, path: str):
         names = pq.read_metadata(path).schema.names
         match = None
-        for name in self.col_name:
+        for name in self.col_names:
             if name in names:
                 match = name
                 break
-        assert match is not None, f"None of column names {self.col_name} found in file headers {names}"
+        assert match is not None, f"None of column names {self.col_names} found in file headers {names}"
         return pq.read_pandas(path, columns=[match], partitioning=None)[match]
 
     def length(self, path: str):
         return pq.read_metadata(path).num_rows
 
     def get(self, reader, index: int, drop_tokens: Set):
-        doc = self.tokenizer(str(reader[index]))["input_ids"]
+        assert (
+            index < reader.length()
+        ), f"Illegal index {index} in set of {reader.length()} documents"
+        doc = self.tokenizer(str(reader[index])[: self.max_doclen])["input_ids"]
         if len(doc) > 0 and doc[0] in drop_tokens:
             doc = doc[1:]
         # Recheck len for edge case where doc=[eos]
@@ -416,9 +429,9 @@ class ParquetHandler(_ShardFileHandler):
 
 
 class AutoHandler(_ShardFileHandler):
-    def __init__(self, tokenizer_path: str, col_name: List[str] = ["text", "contents", "tokens"]):
-        self.PHandler = ParquetHandler(tokenizer_path, col_name)
-        self.AHandler = ArrowHandler(col_name)
+    def __init__(self, tokenizer_path: str, col_names: List[str] = ["text", "contents", "tokens"], max_doclen: int = 1_000_000):
+        self.PHandler = ParquetHandler(tokenizer_path, col_names, max_doclen)
+        self.AHandler = ArrowHandler(col_names)
         self.current = _ShardFileHandler()
 
     def is_legal(self, filepath: str):
@@ -800,6 +813,128 @@ class DocSliceDataset(_WrapperDataset):
         return sharded_dicts
 
 
+class FIMDataset(_WrapperDataset):
+    """
+    Wrapper for a StatefulDataset that implements Fill-In-the-Middle training
+    (https://arxiv.org/pdf/2207.14255).
+    Input should be a packed sequence (i.e. call BufferDataset before FIMDataset).
+    Breaks sequence apart into component document spans, and for each document span
+    of sufficient length, transforms with specified probability into:
+    PSM mode: <PRE> (prefix) <SUF> (suffix) <MID> (middle) <EOS>
+    SPM mode: <PRE> <SUF> (suffix) <MID> (prefix) (middle) <EOS>
+    The new delimiter tokens can be omitted by passing in None.
+    Any extra tokens after transformation are dropped from the end of the sequence.
+    ...
+    Args
+    ----
+    dataset : _StatefulDataset
+        Fully instantiated dataset
+    delimiter_token : any
+        Token used to indicate document boundaries
+    psm_rate : float
+        Chance to transform into PSM. Cannot exceed 1.
+    spm_rate : float
+        Chance to transform into SPM. Cannot exceed 1.
+    min_len : int
+        Minimum document length to perform FIM transformation
+    pre_token : any | none
+        Token used to indicate prefix section of the document
+    mid_token : any | none
+        Token used to indicate middle infill section of the document
+    suf_token : any | none
+        Token used to indicate suffix section of the document
+    """
+
+    def __init__(
+        self,
+        dataset: _StatefulDataset,
+        delimiter_token: Any,
+        psm_rate: float = 0.0,
+        spm_rate: float = 0.0,
+        min_len: int = 10,
+        pre_token=None,
+        mid_token=None,
+        suf_token=None,
+    ):
+        super().__init__(dataset)
+        assert (
+            psm_rate + spm_rate > 0
+        ), f"FIM training requires SPM or PSM transformation. Please specify a nonzero psm_rate or spm_rate."
+        assert (
+            psm_rate + spm_rate <= 1
+        ), f"Combined psm_rate {psm_rate} and spm_rate {spm_rate} probabilities cannot exceed 1."
+        self.psm = psm_rate
+        self.spm = spm_rate
+        self.delimiter = delimiter_token
+        self.min_len = min_len
+        self.pref = pre_token
+        self.suff = suf_token
+        self.midd = mid_token
+
+        self.g_state = None
+        self.generator = torch.Generator().manual_seed(self.rank)
+        self.state_params = ["g_state"]
+
+    def __iter__(self):
+        dataset = iter(self.dataset)
+        while True:
+            inp = next(dataset)
+            len_ = len(inp)
+            i_eos = [0] + [i for i, x in enumerate(inp) if x == self.delimiter] + [len_]
+            docs = [
+                inp[i_eos[j] + 1 : i_eos[j + 1]] for j in range(len(i_eos) - 1)
+            ]  # list[list[any]]
+            out = []
+            for i in range(len(docs)):
+                doc = docs[i]
+                if len(docs[i]) >= self.min_len:
+                    # decide psm, spm, or nothing
+                    thresh = torch.rand([1], generator=self.generator).item()
+                    if thresh < self.psm + self.spm:
+                        # Split doc
+                        doc = []
+                        if self.pref:
+                            doc = [self.pref]
+                        splits = torch.randint(
+                            0, len(docs[i]), [2], generator=self.generator
+                        ).tolist()
+                        pre = docs[i][: min(splits)]
+                        mid = docs[i][min(splits) : max(splits)]
+                        suf = docs[i][max(splits) :]
+
+                        if thresh < self.psm:
+                            # PSM transformation
+                            doc += pre
+                            if self.suff:
+                                doc.append(self.suff)
+                            doc += suf
+                            if self.midd:
+                                doc.append(self.midd)
+                            doc += mid
+                        else:
+                            # SPM transformation
+                            if self.suff:
+                                doc.append(self.suff)
+                            doc += suf
+                            if self.midd:
+                                doc.append(self.midd)
+                            doc += pre + mid
+                out += doc + [self.delimiter]
+            yield out[:len_]
+
+    def state_dict(self):
+        # Write generator state manually
+        self.g_state = self.generator.get_state()
+        return super().state_dict()
+
+    def load_state_dict(self, state_dicts, sharded_input=False):
+        sharded_dicts = super().load_state_dict(state_dicts, sharded_input)
+        # Manually set generator state if it exists
+        if self.g_state is not None:
+            self.generator.set_state(self.g_state)
+        return sharded_dicts
+
+
 class BufferDataset(_WrapperDataset):
     """
     Wrapper for a _StatefulDataset that takes in sequences of varying lengths, and packs/pads them
@@ -945,10 +1080,10 @@ class StreamingDocDataset(_StatefulDataset):
         Documents below this length are skipped
     max_chunksize : int
         Maximum sequence length to return. Break long docs into chunks of this size or shorter.
+    max_consecutive_chunks : int
+        Number of doc chunks to emit before manually inserting EOS and resuming later.
     verbose : bool
         Track setup progress?
-    shuffle : bool
-        Shuffle shard file and document orders? (Disable for simple testing)
     """
 
     def __init__(
@@ -963,6 +1098,7 @@ class StreamingDocDataset(_StatefulDataset):
         seed: int = 42,
         min_length: int = 1,
         max_chunksize: int = 1024,
+        max_consecutive_chunks: int = 256,
         verbose: bool = False,
         filter_exp: int = 2,
     ):
@@ -976,6 +1112,7 @@ class StreamingDocDataset(_StatefulDataset):
         self.eos = delimiter_token
         self.bos = bos_token
         self.drop = strip_tokens
+        self.max_consec = max_consecutive_chunks
         self.verbose = verbose
         self.filter_exp = filter_exp
         self.docset: List[
@@ -992,6 +1129,7 @@ class StreamingDocDataset(_StatefulDataset):
         self.docs_seen = 0
         self.percent_seen = 0
         self.has_yielded = False
+        self.consec = 0
 
         self.state_params = [
             "dataset",
@@ -1003,6 +1141,7 @@ class StreamingDocDataset(_StatefulDataset):
             "percent_seen",
             "lcg_state",
             "g_state",
+            "consec",
         ]
 
         # Setup flags
@@ -1033,35 +1172,62 @@ class StreamingDocDataset(_StatefulDataset):
             # listdir, assemble shardfraglist (ind -> shard, frag)
             shards = [
                 os.path.join(root, name)[len(datapath) + 1 :]
-                for root, dirs, files in os.walk(datapath, topdown=False)
+                for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True)
                 for name in files
                 if self.filehandler.is_legal(os.path.join(root, name))
                 and os.path.getsize(os.path.join(root, name)) > 1_000_000
                 # 1mb minimum file size to prevent empty files
             ]
             shards.sort()  # Ensure consistent sharding across machines
-            start_frag = (self.rank * self.worldsize * len(shards)) // self.worldsize
-            end_frag = (
-                (self.rank + 1) * self.worldsize * len(shards)
-            ) // self.worldsize
-            shardfrags = [
-                (shards[i // self.worldsize], i % self.worldsize)
-                for i in range(start_frag, end_frag)
-            ]
 
-            # Assemble length of each owned shard file
-
+            # Find metadata file
             countfiles = []
-            # if os.path.exists(os.path.join(pardir, "meta")):
-            #     countfiles = [
-            #         x
-            #         for x in os.listdir(os.path.join(pardir, "meta"))
-            #         if "counts" in x and "csv" in x
-            #     ]
-            doc_counts = {}
+            if os.path.exists(os.path.join(pardir, "meta")):
+                countfiles = [
+                    x
+                    for x in os.listdir(os.path.join(pardir, "meta"))
+                    if "counts" in x and "csv" in x
+                ]
             if len(countfiles) > 0:
                 # Count file exists, use it
                 countpath = os.path.join(pardir, "meta", countfiles[0])
+            else:
+                countpath = ""
+
+            # Use shard file sizes to perform partitioning
+            # Create shardlist of form shardid -> [start%, end%]
+            if len(countfiles) > 0:
+                sizes = {}
+                with open(countpath, "r") as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        fullpath = row["dataset/filename"]
+                        prefix = fullpath.find(dataset + "/")
+                        if prefix >= 0:
+                            key = fullpath[prefix + len(dataset) + 1 :]
+                            sizes[key] = int(row["size"])
+                shard_sizes = [sizes[shard] for shard in shards]
+            else:
+                shard_sizes = [
+                    os.path.getsize(os.path.join(datapath, shard)) for shard in shards
+                ]
+            shard_sizes = [s / sum(shard_sizes) for s in shard_sizes]
+            start = self.rank / self.worldsize
+            end = (self.rank + 1) / self.worldsize
+            shardset = {}
+            tally = 0
+            for i in range(len(shards)):
+                if tally <= end and tally + shard_sizes[i] >= start:
+                    shardset[shards[i]] = [
+                        min(max((start - tally) / shard_sizes[i], 0), 1),
+                        min(max((end - tally) / shard_sizes[i], 0), 1),
+                    ]
+                tally += shard_sizes[i]
+
+            # Assemble length of each owned shard file
+            doc_counts = {}
+            if len(countfiles) > 0:
+                # Count file exists, use it
                 with open(countpath, "r") as csvfile:
                     reader = csv.DictReader(csvfile)
                     for row in reader:
@@ -1072,41 +1238,28 @@ class StreamingDocDataset(_StatefulDataset):
                             doc_counts[key] = int(row["documents"])
             else:
                 # Count file does not exist, touch every owned file for length
-                unique_shardfiles = set(shard for shard, frag in shardfrags)
                 doc_counts = {
                     shard: self.filehandler.length(os.path.join(datapath, shard))
-                    for shard in unique_shardfiles
+                    for shard in shardset
                 }
 
-            # Read shardfrags, assemble doc list for each file shard (aggregating over fragments):
-            ndocs = -1
-            docset = {}  # shardid -> (min docid, max docid)
-            for i, (shard, frag) in enumerate(shardfrags):
-                ndocs = doc_counts[shard]
-                doc_start = (ndocs * frag) // self.worldsize
-                doc_end = (
-                    ndocs * frag + ndocs
-                ) // self.worldsize - 1  # Inclusive upper bound
-                if shard not in docset:
-                    docset[shard] = [doc_start, doc_end]
-                min_d, max_d = docset[shard]
-                if doc_start < min_d:
-                    docset[shard][0] = doc_start
-                if doc_end > max_d:
-                    docset[shard][1] = doc_end
-
-            # Add shard entries to self.docset
+            # Assemble doc list for each file shard
+            # Create docset of form [shardid, min docid, max docid]
             doccount = 0
-            for shardid in docset:
-                min_d = docset[shardid][0]
-                max_d = docset[shardid][1]
-                self.docset.append((shardid, min_d, max_d))
-                doccount += max_d - min_d + 1
+            for shard in shardset:
+                ndocs = doc_counts[shard]
+                if ndocs > 0:
+                    doc_start = int(ndocs * shardset[shard][0])
+                    doc_end = max(
+                        doc_start, int(ndocs * shardset[shard][1]) - 1
+                    )  # inclusive upper bound
+                    self.docset.append([shard, doc_start, doc_end])
+                    doccount += doc_end - doc_start + 1
             self._len = doccount
 
             if self.verbose:
                 logging.info(
-                    f"    Worker {self.rank} ingested {len(shardfrags)} shard fragments from {dataset}"
+                    f"    Worker {self.rank} ingested {len(self.docset)} shard fragments from {dataset}"
                 )
 
             # Shuffle shard files - guaranteed inconsistent across workers
@@ -1162,8 +1315,11 @@ class StreamingDocDataset(_StatefulDataset):
         # Add bos/eos tokens if needed
         if self.bos is not None and j == 0:
             chunk = [self.bos] + chunk
-        if j == n_chunks - 1:
+        if j == n_chunks - 1 or self.consec == self.max_consec:
             chunk = chunk + [self.eos]
+            self.consec = 0
+        else:
+            self.consec += 1
         return chunk
 
     def _random_map_docid(self, size):
@@ -1208,11 +1364,9 @@ class StreamingDocDataset(_StatefulDataset):
                 doclcg = self._random_map_docid(docrange)
                 docid = doclcg + mindoc
                 doc = self.filehandler.get(reader, docid, self.drop)
-                if len(doc) == 0:
-                    continue
                 doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
                 keep_chance = (doclen/self.min_length)**self.filter_exp
-                if torch.rand(1, generator=self.g).item() < keep_chance:
+                if len(doc) > 0 and torch.rand(1, generator=self.g).item() < keep_chance:
                     n_chunks = math.ceil(doclen / self.chunksize)
                     for j in range(n_chunks):
                         if i == 0 and j < residual_chunks:
@@ -1239,11 +1393,9 @@ class StreamingDocDataset(_StatefulDataset):
             newpath = os.path.join(self.datapath, shardid)
             path, reader = self._get_reader(path, newpath, reader)
             doc = self.filehandler.get(reader, docid, self.drop)
-            if len(doc) == 0:
-                continue
             doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
             keep_chance = (doclen/self.min_length)**self.filter_exp
-            if torch.rand(1, generator=self.g).item() < keep_chance:
+            if len(doc) > 0 and torch.rand(1, generator=self.g).item() < keep_chance:
                 n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):
                     self.chunk_index = j
@@ -1333,12 +1485,12 @@ class ScalableShardDataset(_WrapperDataset):
         if not self.is_setup:
             _StatefulDataset.setup(self)
             n_logical_shards = self.total_shards
+            assert (
+                n_logical_shards % self.worldsize == 0
+            ), f"Total workers {self.worldsize} must divide n_logical_shards {n_logical_shards} evenly"
             logicals = list(range(n_logical_shards))
             self.logicals_owned = _shard_partition(logicals, self.rank, self.worldsize)
             self.n_logicals = n_logical_shards // self.worldsize
-            assert (
-                len(self.logicals_owned) == self.n_logicals
-            ), "(world size * num workers) does not divide logical shards evenly"
 
             # Build logical shards
             for i in range(self.n_logicals):
@@ -1355,6 +1507,9 @@ class ScalableShardDataset(_WrapperDataset):
                     )
             [d.setup() for d in self.data]
             self.n_docs_remaining = [d._len for d in self.data]
+            assert (
+                sum(self.n_docs_remaining) > 0
+            ), f"No documents detected in shard {self.rank} of {self.datapath}"
 
             self.generator = torch.Generator().manual_seed(self.rank)
 
@@ -1362,14 +1517,16 @@ class ScalableShardDataset(_WrapperDataset):
         self.setup()
         # Grab one doc at a time in random order
         data = [iter(d) for d in self.data]
+        # Reset if we're rescaling into a prematurely finished epoch
+        # (i.e. [1,1,0,0,0,0] into [1,1,0] [0,0,0] )
+        if sum(self.n_docs_remaining) == 0:
+            self.n_docs_remaining = [d._len for d in self.data]
+            self.generator.manual_seed(self.rank)
         while True:
             # Sample logical shard (or load from ckp)
             if self.current_reader is not None:
                 ind = self.current_reader
             else:
-                assert (
-                    sum(self.n_docs_remaining) > 0
-                ), f"No documents detected in {self.datapath}"
                 ind = torch.multinomial(
                     torch.tensor(self.n_docs_remaining, dtype=torch.float),
                     1,
@@ -1461,6 +1618,10 @@ class SamplingDataset(_WrapperDataset):
             ]
         )
         assert len(self.datasets) > 0, "You must specify at least one dataset"
+        for d in datasets:
+            assert os.path.exists(
+                os.path.join(datapath, d)
+            ), f"Invalid subdataset path: {os.path.join(datapath, d)}"
 
         if weights is not None:
             assert len(weights) == len(
