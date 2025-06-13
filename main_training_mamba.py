@@ -152,7 +152,7 @@ def main(**kwargs):
         auto_wrap_policy=wrapping_policy,
         mixed_precision=mixed_precision_policy,
         sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
+        use_orig_params=True,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
