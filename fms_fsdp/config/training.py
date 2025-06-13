@@ -26,6 +26,18 @@ class train_config:
     strip_tokens: str = ""
     logical_shards: int = 1024
     num_workers: int = 1
+    doc_cutoff: int = 1_000_000
+    doc_breakpoint: int = 65_536
+    filter_exp: int = 2
+    target_doclen: int = 8192
+    slice_rate: float = 0.0
+
+    # FIM training
+    psm_rate: float = 0.0
+    spm_rate: float = 0.0
+    fim_pre: int = 1
+    fim_mid: int = 2
+    fim_suf: int = 3
 
     # fsdp policies
     sharding_strategy: str = "hsdp"
@@ -72,3 +84,9 @@ class train_config:
     stage2_prompt_length: int = 64
     stage2_batch_size: int = 96
     stage2_seq_length: int = 256
+
+    # context parallel
+    cp: bool = False
+    cp_mamba_impl: str = "allgather"  # "allgather" or "serial"
+    cp_attn_impl: str = "zigzag"  # "zigzag" or "ring"
+    cp_over_world: bool = False

@@ -4,12 +4,15 @@ from pathlib import Path
 
 import fire
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
 from torch import distributed as dist
+from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.wrap import CustomPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -51,20 +54,82 @@ def main(**kwargs):
         Path.home(), ".triton", "cache", str(local_rank)
     )
 
-    # get policy
+    # get policy. NOTE: @goon - overriding {wrapping_policy, param_init_fn} below
     block = Block
     (
         mixed_precision_policy,
-        wrapping_policy,
+        _,
         sharding_strategy_policy,
         apply_selective_ac,
-        param_init_fn,
+        _,  # NOTE: @goon - We'll override param_init_fn for mamba below
     ) = get_policies(cfg, rank, block)
+    if cfg.low_cpu_fsdp:
+        # NOTE: @goon - the params will be junk after using this. Only intended to be used in
+        # conjunction with loading proper weights from a checkpoint.
+        def param_init_fn(module):
+            module.to_empty(device=torch.cuda.current_device())
+    else:
+        param_init_fn = None
+
+    # Meshes for FSDP and CP. NOTE: @goon - Getting hangs and/or OOMs if I don't explicitly specify
+    # the FSDP mesh when using 4+ nodes with HSDP + in-node-CP.
+    def get_1D_world_mesh(world_size: int) -> DeviceMesh:
+        mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
+        return mesh
+
+    def get_2D_world_mesh(world_size: int) -> DeviceMesh:
+        num_gpu_per_node = torch.cuda.device_count()
+        assert world_size % num_gpu_per_node == 0
+        mesh = dist.device_mesh.init_device_mesh(
+            "cuda",
+            (world_size // num_gpu_per_node, num_gpu_per_node),
+            mesh_dim_names=("inter_node", "intra_node"),
+        )
+        return mesh
+
+    requires_2d_mesh = (cfg.sharding_strategy == "hsdp") or (
+        cfg.cp and not cfg.cp_over_world
+    )
+    if requires_2d_mesh:
+        mesh = get_2D_world_mesh(world_size)
+        fsdp_mesh = mesh
+        cp_mesh = mesh["intra_node"] if cfg.cp else None
+    else:
+        mesh = get_1D_world_mesh(world_size)
+        fsdp_mesh = mesh
+        cp_mesh = mesh if cfg.cp else None
+
+    if cfg.cp:
+        cp_degree = world_size if cfg.cp_over_world else torch.cuda.device_count()
+    else:
+        cp_degree = 1
+
+    dp_degree = world_size // cp_degree
 
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
-    model = MambaLMHeadModel(mamba_config)
+
+    if cfg.low_cpu_fsdp:
+        with torch.device("meta"):
+            model = MambaLMHeadModel(
+                mamba_config,
+                cp_mesh=cp_mesh if cfg.cp else None,
+                cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
+                cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
+            )
+    else:
+        model = MambaLMHeadModel(
+            mamba_config,
+            cp_mesh=cp_mesh if cfg.cp else None,
+            cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
+            cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
+        )
+
+    def lambda_fn(module: nn.Module):
+        return isinstance(module, (Block, nn.Embedding)) or module is model.lm_head
+
+    wrapping_policy = CustomPolicy(lambda_fn)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -74,7 +139,7 @@ def main(**kwargs):
     if rank == 0:
         print("Constructing datasets...")
     if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg, rank, world_size)
+        train_loader = get_data_loader(cfg, rank, world_size, dp_degree)
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:
@@ -83,32 +148,60 @@ def main(**kwargs):
     # FSDP
     model = FSDP(
         model,
+        device_mesh=fsdp_mesh,
         auto_wrap_policy=wrapping_policy,
         mixed_precision=mixed_precision_policy,
         sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
+        use_orig_params=True,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
     )
+    if rank == 0:
+        print(model)
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
-            print(f"--> applying FSDP activation checkpointing...")
+            print("--> applying FSDP activation checkpointing...")
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # torch compile
     if cfg.use_torch_compile:
         if rank == 0:
-            print(f"--> enabling torch compile...")
+            print("--> enabling torch compile...")
         # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
 
     # Optimizer
+    # optimizer = optim.AdamW(
+    #     model.parameters(),
+    #     lr=cfg.learning_rate,
+    #     betas=(0.9, 0.95),
+    #     weight_decay=0.1,
+    # )
+    params_with_decay = []
+    params_without_decay = []
+    for name, param in model.named_parameters():
+        suff = name.split('.')[-1]
+        if 'A_log' in suff or 'D' in suff or 'dt_bias' in suff:
+            params_without_decay.append(param)
+        else:
+            params_with_decay.append(param)
     optimizer = optim.AdamW(
-        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+        [
+            {
+                "params": params_with_decay,
+                "weight_decay": 0.1,
+            },
+            {
+                "params": params_without_decay,
+                "weight_decay": 0.,
+            },
+        ],
+        betas = (0.9, 0.95),
+        lr = cfg.learning_rate,
     )
 
     # optionally load from checkpoint (when continue pretraining)
@@ -131,19 +224,36 @@ def main(**kwargs):
             g["initial_lr"] = cfg.learning_rate
 
     # LR schedule
+    warmup_interval = min(2000, cfg.num_steps // 20)
+    warmup = lambda x: 1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2
     # linear decay for annealing
     if cfg.training_stage == "annealing":
-        schedule = lambda x: 1 - x / cfg.num_steps
-    else:
+        warmup_interval = 1000
+        schedule = lambda x: x / warmup_interval if x < warmup_interval else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+    elif cfg.training_stage == "cosine":
         # cosine decay
-        warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
-            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+            warmup(x),
             0.1
             + 0.5
             * (1 - 0.1)
             * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         )
+    elif cfg.training_stage == "constant":
+        warmup_interval = 2000
+        schedule = lambda x: (min(x, warmup_interval) / warmup_interval)
+    elif cfg.training_stage == "linear_to_constant":
+        linear_steps = 25000
+        start_lr = 2e-4
+        end_lr = 2e-4
+        schedule = lambda x: (start_lr + (end_lr - start_lr) * min(x - start_step, linear_steps) / linear_steps) / cfg.learning_rate
+    elif cfg.training_stage == "annealing_with_specified_decay_steps":
+        warmup_interval = 2000
+        total_decay_steps = 25000
+        schedule = lambda x: (x - start_step) / warmup_interval if x - start_step < warmup_interval else max(0.0, 1 - (x - start_step - warmup_interval) / total_decay_steps)
+    else:
+        schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
+        
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
@@ -165,6 +275,7 @@ def main(**kwargs):
         checkpointer,
         start_step,
         tokens_seen,
+        cp_degree,
     )
 
     dist.barrier()

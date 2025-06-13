@@ -126,7 +126,6 @@ def get_model_config(model_variant):
             nlayers=24,
             hidden_grow_factor=8 / 3,
             max_expected_seq_len=4096,
-            rope_theta=500000.0,
         )
     elif model_variant == "llama3_70b":
         model_config = LLaMAConfig(
@@ -175,7 +174,7 @@ def get_model_config(model_variant):
                 "num_heads_kv": 8,
                 "out_proj_bias": False,
                 "qkv_proj_bias": False,
-                "rotary_emb_dim": 64,
+                "rotary_emb_dim": 0,
             },
             "rms_norm": True,
             "residual_in_fp32": True,
