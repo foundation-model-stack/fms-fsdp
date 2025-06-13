@@ -44,19 +44,22 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             if rank == 0:
-                print("--> wandb is enabled!")
+                print("--> Started initializing wandb", flush=True)
                 try:
                     wandb.init(
                         project=project_name,
                         dir=tracker_dir,
                         resume="allow",
                         id=run_id,
+                        # mode='offline',
+                        settings=wandb.Settings(init_timeout=3600),
                     )
                 except wandb.errors.UsageError:
                     raise ValueError(
                         "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                     )
                 wandb.config = asdict(cfg)
+                print(f"--> wandb is enabled!", flush=True)
 
         if cfg.tracker == "aim":
             try:
@@ -102,7 +105,7 @@ def train(
         if profiler:
             profiler.step()
 
-        if batch_idx % cfg.report_interval == 0:
+        if batch_idx % cfg.report_interval == 0 or batch_idx == start_step + 1:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             train_loss = ddp_stats[0] / ddp_stats[2]
             g_norm = ddp_stats[1] / ddp_stats[2]
@@ -151,7 +154,7 @@ def train(
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
                 print(f"Total tok/step: {world_size * cfg.batch_size * cfg.seq_length}")
-                if cfg.tracker:
+                if cfg.tracker and batch_idx > start_step + 1:
                     vals_to_track = {
                         "learning rate": current_lr,
                         "loss": current_loss,
