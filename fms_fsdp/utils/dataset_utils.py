@@ -706,7 +706,7 @@ class PreloadBufferDataset(_WrapperDataset):
         if len(self.buffer) < self.window_size:
             self.buffer += [
                 [],
-            ] * (len(self.buffer) - self.buffer_size)
+            ] * (self.window_size - len(self.buffer))
 
     def state_dict(self):
         # Write generator state manually
