@@ -753,52 +753,55 @@ class DocSliceDataset(_WrapperDataset):
             inplen = len(inp)
             doclist = []
             last_delim = 0
-            for i in range(len(inp)):
-                if inp[i] == self.delimiter:
-                    doclist.append(inp[last_delim:i])
-                    last_delim = i+1
-            doclist.append(inp[last_delim:])
-            # Pull out any short caps
-            begin = []
-            end = []
-            if len(doclist[0])//3 <= self.overlap:
-                begin = doclist[0]
-                doclist = doclist[1:]
-            if len(doclist[-1])//3 <= self.overlap:
-                end = doclist[-1]
-                doclist = doclist[:-1]
-            # Figure out which docs to slice
-            slice = []
-            unslice = []
-            for doc in doclist:
-                if torch.rand(1, generator=self.generator) < self.slicerate and len(doc)//3 > self.overlap:
-                    slice.append(doc)
-                else:
-                    unslice.append(doc)
-            if len(slice) <= 1:
+            if self.delimiter not in inp:
                 yield inp
             else:
-                # Perform slicing
-                sliced = []
-                for doc in slice:
-                    i = torch.randint(0, len(doc)//3, [1], generator=self.generator).item() + len(doc)//3
-                    sliced.append([doc[:i], doc[i-self.overlap:]])
-                slice = sliced
-                doclist = [slice[0][0], slice[1][0], slice[0][1], slice[1][1]]
-                for docpair in slice[2:]:
-                    inds = torch.randperm(len(doclist)+1, generator=self.generator)[:2].tolist()
-                    inds.sort()
-                    inds[1] += 1
-                    doclist = doclist[:inds[0]] + [docpair[0]] + doclist[inds[0]:inds[1]-1] + [docpair[1]] + doclist[inds[1]-1:]
-                for doc in unslice:
-                    i = torch.randint(0, len(doclist)+1, [1], generator=self.generator).item()
-                    doclist = doclist[:i] + [doc] + doclist[i:]
-                out = begin + [self.delimiter]
+                for i in range(len(inp)):
+                    if inp[i] == self.delimiter:
+                        doclist.append(inp[last_delim:i])
+                        last_delim = i+1
+                doclist.append(inp[last_delim:])
+                # Pull out any short caps
+                begin = []
+                end = []
+                if len(doclist[0])//3 <= self.overlap:
+                    begin = doclist[0]
+                    doclist = doclist[1:]
+                if len(doclist[-1])//3 <= self.overlap:
+                    end = doclist[-1]
+                    doclist = doclist[:-1]
+                # Figure out which docs to slice
+                slice = []
+                unslice = []
                 for doc in doclist:
-                    out = out + doc
-                    out.append(self.delimiter)
-                out = out + end
-                yield out[:inplen]
+                    if torch.rand(1, generator=self.generator) < self.slicerate and len(doc)//3 > self.overlap:
+                        slice.append(doc)
+                    else:
+                        unslice.append(doc)
+                if len(slice) <= 1:
+                    yield inp
+                else:
+                    # Perform slicing
+                    sliced = []
+                    for doc in slice:
+                        i = torch.randint(0, len(doc)//3, [1], generator=self.generator).item() + len(doc)//3
+                        sliced.append([doc[:i], doc[i-self.overlap:]])
+                    slice = sliced
+                    doclist = [slice[0][0], slice[1][0], slice[0][1], slice[1][1]]
+                    for docpair in slice[2:]:
+                        inds = torch.randperm(len(doclist)+1, generator=self.generator)[:2].tolist()
+                        inds.sort()
+                        inds[1] += 1
+                        doclist = doclist[:inds[0]] + [docpair[0]] + doclist[inds[0]:inds[1]-1] + [docpair[1]] + doclist[inds[1]-1:]
+                    for doc in unslice:
+                        i = torch.randint(0, len(doclist)+1, [1], generator=self.generator).item()
+                        doclist = doclist[:i] + [doc] + doclist[i:]
+                    out = begin + [self.delimiter]
+                    for doc in doclist:
+                        out = out + doc
+                        out.append(self.delimiter)
+                    out = out + end
+                    yield out[:inplen]
 
     def state_dict(self):
         # Write generator state manually
