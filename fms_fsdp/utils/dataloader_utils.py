@@ -142,11 +142,12 @@ def get_data_loader(cfg, rank, world_size, dp_degree):
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
     data = PreloadBufferDataset(data, 1000)
     # Slice and rearrange docs to force long-context retrieval
-    data = DocSliceDataset(
-        data,
-        cfg.eos_token,
-        slice_rate=.75,
-    )
+    if cfg.slice_rate > 0:
+        data = DocSliceDataset(
+            data,
+            cfg.eos_token,
+            slice_rate=cfg.slice_rate,
+        )
     # Apply FIM transformation if needed
     if fim_training:
         data = FIMDataset(
