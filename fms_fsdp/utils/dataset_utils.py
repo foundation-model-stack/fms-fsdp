@@ -677,10 +677,17 @@ class PreloadBufferDataset(_WrapperDataset):
         dataset = iter(self.dataset)
         # Pad out buffer if needed
         self._pad_buffer()
+        first_draw = next(dataset)
         while True:
+            # If buffer entries have wrong length, reset buffer
+            if len(first_draw) != len(self.buffer[0]):
+                self.buffer = []
+                self.buffer_size = 0
+                self._pad_buffer()
+
             # If buffer is undersized, add a datapoint
             if self.buffer_size < self.window_size:
-                self.buffer[self.buffer_size] = next(dataset)
+                self.buffer[self.buffer_size] = next(dataset) if self.buffer_size > 0 else first_draw
                 self.buffer_size += 1
 
             # Swap out randomly sampled value from buffer.
@@ -696,10 +703,10 @@ class PreloadBufferDataset(_WrapperDataset):
             yield out
 
     def _pad_buffer(self):
-        if self.buffer_size < self.window_size:
+        if len(self.buffer) < self.window_size:
             self.buffer += [
                 [],
-            ] * (self.window_size - self.buffer_size)
+            ] * (len(self.buffer) - self.buffer_size)
 
     def state_dict(self):
         # Write generator state manually
