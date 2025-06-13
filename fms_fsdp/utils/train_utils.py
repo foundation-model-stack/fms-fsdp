@@ -84,6 +84,8 @@ def train(
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break
+        if rank == 0:
+            print(input.shape)
         input = input.to(local_rank)
         label = label.to(local_rank)
 
