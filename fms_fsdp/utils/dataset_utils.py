@@ -707,6 +707,8 @@ class PreloadBufferDataset(_WrapperDataset):
         # Prune buffer so it can be resharded in future
         self.buffer = self.buffer[: self.buffer_size]
         out = super().state_dict()
+        # Pad buffer back out again
+        self._pad_buffer()
         return out
 
     def load_state_dict(self, state_dicts, sharded_input=False):
