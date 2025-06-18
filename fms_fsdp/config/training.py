@@ -40,6 +40,7 @@ class train_config:
 
     # training spec
     batch_size: int = 2
+    grad_accum_steps: int = 1
     num_steps: int = 1000000
     training_stage: str = "initial"
     learning_rate: float = 3e-4
