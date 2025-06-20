@@ -81,7 +81,7 @@ def train(
 
     model.train()
     optimizer.zero_grad()
-    ddp_stats = torch.zeros(3).to(local_rank)
+    ddp_stats = torch.zeros(4).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -110,13 +110,14 @@ def train(
         scheduler.step()
 
         ddp_stats[0] += loss.item()
+        ddp_stats[3] += 1.0 / cfg.grad_accum_steps
 
         if profiler:
             profiler.step()
 
         if batch_idx % cfg.report_interval == 0 or batch_idx == start_step + max(1, cfg.grad_accum_steps):
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
-            train_loss = ddp_stats[0] / ddp_stats[2]
+            train_loss = ddp_stats[0] / ddp_stats[3]
             g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
