@@ -1,5 +1,6 @@
 import math
 import os
+import sys
 
 import fire
 import torch
@@ -20,7 +21,10 @@ from fms_fsdp.utils.train_utils import (
     setup_environ_flags,
     train,
 )
+from transformers import AutoModelForCausalLM
+from transformers import AutoConfig
 
+    
 
 def main(**kwargs):
     # get configs
@@ -37,7 +41,9 @@ def main(**kwargs):
     world_size = int(os.environ["WORLD_SIZE"])
 
     if rank == 0:
-        print(f"--> running with these configs {cfg}")
+        print(f"\n--> running with these configs:")
+        for k, v in vars(cfg).items():
+            print(f"  {k:30} = {v}")
 
     # some setups
     setup()
@@ -66,15 +72,17 @@ def main(**kwargs):
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"\n--> model has {total_params / 1e6} Million params\n")
+        print(f"\n--> model has {total_params / 1e6:.3f} Million params\n")
 
     # get data loader
     if rank == 0:
         print("Constructing datasets...")
+        
     if not cfg.use_dummy_dataset:
         train_loader = get_data_loader(cfg, rank, world_size)
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
+    
     if rank == 0:
         print("Datasets constructed!")
 
@@ -110,8 +118,10 @@ def main(**kwargs):
         model = torch.compile(model)
 
     # Optimizer
+    #== Change weight_decay from 0.1 to 0.01 to match SmolLM here: 
+    #== https://github.com/huggingface/smollm/blob/542250b39015654d47083245bfb4c03332643bd6/text/pretraining/smollm2/config_smollm2_135M.yaml#L69
     optimizer = optim.AdamW(
-        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.01
     )
 
     # optionally load from checkpoint (when continue pretraining)
@@ -136,7 +146,26 @@ def main(**kwargs):
     # LR schedule
     if cfg.training_stage == "annealing":
         schedule = lambda x: 1 - x / cfg.num_steps
+    elif cfg.training_stage == "warmup_stable_decay":
+        '''
+        #== Ref. from SmoLM-135M at https://github.com/huggingface/smollm/blob/main/text/pretraining/smollm2/config_smollm2_135M.yaml
+        '''
+        warmup_steps = 2000 # we fix this
+        decay_start_step_absolute = int(cfg.num_steps * 0.8) # Decay starts for the last 20% of steps
+        decay_steps_length = cfg.num_steps - decay_start_step_absolute
+        
+        assert decay_start_step_absolute > warmup_steps, f"The decay_start_step_absolute {decay_start_step_absolute:,} cannot be smaller than warmup_step {warmup_steps:,} given  the num_step={num_steps:,}"          
+
+        # x is the current step (0 to num_steps-1):
+        schedule = lambda x: (
+            x / warmup_steps if x < warmup_steps
+            else (
+                1.0 if x < decay_start_step_absolute
+                else max(0.0, 1.0 - (x - decay_start_step_absolute) / decay_steps_length)
+            )
+        )
     else:
+        # cosine lr scheduler:
         warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
             1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
@@ -150,9 +179,17 @@ def main(**kwargs):
     # profiler
     profiler = get_profiler(cfg, rank)
 
+
+    # double-check model architecture:
+    if rank==0:
+        print(f"\n--> llama_config:")
+        for k, v in vars(llama_config).items():
+            print(f"  {k:30} = {v}")
+        
+        print(f"\n--> Training for {cfg.num_steps:,} steps\n")
+        
+
     # Train
-    if rank == 0:
-        print(f"Training for {cfg.num_steps} steps")
     train(
         cfg,
         model,

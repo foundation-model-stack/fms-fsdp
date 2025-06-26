@@ -62,6 +62,83 @@ def get_model_config(model_variant):
             hidden_grow_factor=3,
             kvheads=4,
         )
+    elif model_variant == "llama2mod_starcoder135M_context8K_doclingV01":
+        model_config = LLaMAConfig(
+            src_vocab_size=49152,
+            emb_dim=640,       
+            nheads=8,          
+            nlayers=15,        
+            max_expected_seq_len=8192,  
+        )
+    elif model_variant == "llama135m_starcoder": 
+        # doctag proj: same arch. with smolLM2-135M
+        model_config = LLaMAConfig(
+            src_vocab_size=49152,
+            emb_dim=576,                # Matches hidden_size
+            nheads=9,                   # 576 / 9 = 64 (valid head dim)
+            kvheads=3,                  # Matches reference key-value heads
+            nlayers=30,                 # set to 22/23 to get 134M/138M params
+            max_expected_seq_len=2048, 
+            hidden_grow_factor=2.6667, # 576 × 2.6667 ≈ 1536 (FFN size)
+            multiple_of=16,            # Ensures MLP dim is divisible by 16
+            activation_fn="silu",      # Matches hidden_act
+            norm_eps=1e-5,             # Matches rms_norm_eps
+            attn_bias = False,
+            mlp_bias = False,
+            tie_heads = True,
+        )
+    elif model_variant == "llama165m_nokvhead": 
+        # name used in prev.exp (with rope 10K): llama165m_granite4tiktoken_nokvhead
+        #== same architecture of smolLM2-135M except the embd.layer due to increasing vocab.size for tiktoken
+        #== doctag proj: 165M = 134M(smolLM135) - 28M(smolLM's embd.lay) + 57M(embd.layer with vocab 100k)
+        model_config = LLaMAConfig(
+            src_vocab_size=100352,
+            emb_dim=576,                # Matches hidden_size
+            nheads=9,                   # 576 / 9 = 64 (valid head dim)
+            nlayers=30,                 # set to 22/23 to get 134M/138M params
+            max_expected_seq_len=8192, # Matches reference
+            hidden_grow_factor=2.6667, # 576 × 2.6667 ≈ 1536 (FFN size)
+            rope_theta=100_000.0,
+            tie_heads = True,
+        )
+    elif model_variant == "llama165m": 
+        #== name used in prev.exp (with rope 10K): llama165m_granite4tiktoken
+        #== same architecture of smolLM2-135M except the embd.layer due to increasing vocab.size for tiktoken
+        #== doctag proj: 165M = 134M(smolLM135) - 28M(smolLM's embd.lay) + 57M(embd.layer with vocab 100k)
+        model_config = LLaMAConfig(
+            src_vocab_size=100352,
+            emb_dim=576,                # Matches hidden_size
+            nheads=9,                   # 576 / 9 = 64 (valid head dim)
+            kvheads=3,                  # Matches reference key-value heads
+            nlayers=30,                 # set to 22/23 to get 134M/138M params
+            max_expected_seq_len=8192, # Matches reference
+            hidden_grow_factor=2.6667, # 576 × 2.6667 ≈ 1536 (FFN size)
+            multiple_of=16,            # Ensures MLP dim is divisible by 16
+            activation_fn="silu",      # Matches hidden_act
+            norm_eps=1e-5,             # Matches rms_norm_eps
+            rope_theta=100_000.0,
+            attn_bias = False,
+            mlp_bias = False,
+            tie_heads = True,
+        )
+    elif model_variant == "llama165m_granite4tiktoken_wokvhead": 
+        model_config = LLaMAConfig(
+            src_vocab_size=100352,
+            emb_dim=576,                # Matches hidden_size
+            nheads=9,                   # 576 / 9 = 64 (valid head dim)
+            nlayers=30,                 # set to 22/23 to get 134M/138M params
+            max_expected_seq_len=8192, # Matches reference
+            rope_theta=100_000.0,
+            tie_heads = True,
+        )
+    elif model_variant == "llama165m_granite4tiktoken_wokvhead_wotieheads": 
+        model_config = LLaMAConfig(
+            src_vocab_size=100352,
+            emb_dim=576,                # Matches hidden_size
+            nheads=9,                   # 576 / 9 = 64 (valid head dim)
+            nlayers=30,                 # set to 22/23 to get 134M/138M params
+            max_expected_seq_len=8192, # Matches reference
+        )
     elif model_variant == "llama3_8b":
         model_config = LLaMAConfig(
             src_vocab_size=128256,

@@ -129,22 +129,23 @@ def train(
                 allocated_mem = torch.cuda.max_memory_allocated(
                     device=torch.cuda.current_device()
                 )
-
-                print("step:", batch_idx)
+                
+                print("step:", f"{batch_idx:,}")
                 print("loss:", current_loss)
                 print("LR:", current_lr)
-                print("tokens seen:", total_tokens_seen)
+                print("tokens seen:", f"{total_tokens_seen:,}")
                 print("gradient norm:", current_gnorm)
-                print("reserved memory:", reserved_mem)
-                print("allocated memory:", allocated_mem)
-                print("current step time:", current_step_time)
-                print("overall step time:", overall_step_time)
-                print("current token per gpu per sec:", current_throughput)
-                print("overall token per gpu per sec:", overall_throughput)
+                print("reserved memory:", f"{reserved_mem:,}")
+                print("allocated memory:", f"{allocated_mem:,}")
+                print("current step time:", f"{current_step_time:.3f}")
+                print("overall step time:", f"{overall_step_time:.3f}")
+                print("current token per gpu per sec:", f"{current_throughput:,}")
+                print("overall token per gpu per sec:", f"{overall_throughput:,}")
                 print(
                     "overall token per day:",
-                    int(new_tokens_seen / elapsed_time * 3600 * 24),
+                    f"{int(new_tokens_seen / elapsed_time * 3600 * 24):,}",
                 )
+
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,
@@ -166,7 +167,14 @@ def train(
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if batch_idx % cfg.checkpoint_interval == 0:
+        
+        # Create 5 checkpoints for the first interval and fallback to normal after that:
+        if batch_idx <= cfg.checkpoint_interval:
+            interval = cfg.checkpoint_interval // 5
+        else:
+            interval = cfg.checkpoint_interval
+
+        if batch_idx % interval == 0:
             checkpointer.save(
                 batch_idx,
                 model,
