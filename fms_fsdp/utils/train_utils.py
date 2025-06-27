@@ -11,12 +11,13 @@ except ImportError:
 import time
 from datetime import timedelta
 
+import torch
 import torch.cuda.nccl as nccl
 import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
-
+from fms_fsdp.utils.dataloader_utils import parse_data_args
 
 def train(
     cfg,
@@ -79,9 +80,15 @@ def train(
                 )
                 run["hparams"] = asdict(cfg)
 
+    datasets, weights, cols = parse_data_args(cfg.datasets, cfg.weights, cfg.col_name)
+
     model.train()
     optimizer.zero_grad()
     ddp_stats = torch.zeros(4).to(local_rank)
+    ddp_ds_losses = torch.zeros(len(datasets)).to(local_rank)
+    ddp_ds_tokens = torch.zeros(len(datasets), dtype=torch.int64).to(local_rank)
+    if rank == 0:
+        ds_total_tokens = torch.zeros(len(datasets), dtype=torch.int64).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -89,13 +96,27 @@ def train(
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break
+        
+        dataset_ids = label[:, :, 1]
+        input = input[:, :, 0].view(-1, input.size(1))
+        label = label[:, :, 0].view(-1, label.size(1))
+
         input = input.to(local_rank)
         label = label.to(local_rank)
 
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
-        ce_loss = torch.nn.CrossEntropyLoss()
-        loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+
+        ce_loss_no_reduce = torch.nn.CrossEntropyLoss(reduction='none')
+        loss = ce_loss_no_reduce(output.view(-1, output.size(-1)), label.view(-1).long())
+        dataset_ids = dataset_ids.view(-1)
+
+        loss_detached = loss.detach()
+        for ds_id in range(len(datasets)):
+            ddp_ds_losses[ds_id] = torch.sum(loss_detached[dataset_ids==ds_id])
+            ddp_ds_tokens[ds_id] = torch.sum(dataset_ids==ds_id)
+
+        loss = torch.mean(loss)
         loss = loss + .0001 * torch.logsumexp(output, dim=-1).pow(2).mean()
         loss = loss / cfg.grad_accum_steps
 
@@ -117,6 +138,9 @@ def train(
 
         if batch_idx % cfg.report_interval == 0 or batch_idx == start_step + max(1, cfg.grad_accum_steps):
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
+            dist.all_reduce(ddp_ds_losses, op=dist.ReduceOp.SUM)
+            dist.all_reduce(ddp_ds_tokens, op=dist.ReduceOp.SUM)
+            
             train_loss = ddp_stats[0] / ddp_stats[3]
             g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
@@ -125,6 +149,11 @@ def train(
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
             if rank == 0:
+                ds_losses =  torch.zeros(len(datasets)).to(local_rank)
+                for i in range(len(datasets)):
+                    ds_total_tokens[i] += ddp_ds_tokens[i]
+                    ds_losses[i] = ddp_ds_losses[i] / ddp_ds_tokens[i] if ddp_ds_tokens[i] > 0 else torch.tensor(float('nan')).to(local_rank)
+
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
@@ -144,6 +173,7 @@ def train(
                     device=torch.cuda.current_device()
                 )
 
+                print("****")
                 print("step:", batch_idx)
                 print("loss:", current_loss)
                 print("LR:", current_lr)
@@ -159,6 +189,13 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
+                print('')
+                for i in range(len(datasets)):
+                    print(f'loss of dataset \"{datasets[i]}\":', ds_losses[i].item())
+                print('')
+                for i in range(len(datasets)):
+                    print(f'tokens seen from dataset \"{datasets[i]}\":', ds_total_tokens[i].item())
+                print('')
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,
@@ -170,6 +207,12 @@ def train(
                         "gpu reserved memory": reserved_mem,
                         "gpu allocated memory": allocated_mem,
                     }
+
+                    for i in range(len(datasets)):
+                        vals_to_track[f'Per dataset loss/{datasets[i]}'] = ds_losses[i].item()
+                    for i in range(len(datasets)):
+                        vals_to_track[f'Per dataset tokens seen/{datasets[i]}'] = ds_total_tokens[i].item()
+
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log
                     elif cfg.tracker == "aim":
@@ -178,6 +221,8 @@ def train(
 
             start = time.time()
             ddp_stats.zero_()
+            ddp_ds_losses.zero_()
+            ddp_ds_tokens.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if batch_idx % cfg.checkpoint_interval == 0 or batch_idx == cfg.num_steps:

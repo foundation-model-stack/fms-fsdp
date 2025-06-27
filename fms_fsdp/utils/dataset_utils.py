@@ -354,7 +354,13 @@ class ArrowHandler(_ShardFileHandler):
         return "arrow" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
-        return pa.ipc.open_file(pa.memory_map(path))
+        try:
+            f = pa.ipc.open_file(pa.memory_map(path))
+        except Exception as e:
+            print('**** Error opening file', path, flush=True)
+            print(e, flush=True)
+            raise(e)
+        return f
 
     def length(self, path: str):
         return self.open(path).num_record_batches
@@ -521,7 +527,8 @@ class PreprocessDataset(_WrapperDataset):
         dataset = iter(self.dataset)
         while True:
             out = next(dataset)
-            yield self.aug_fn(out)
+            res = self.aug_fn(out)
+            yield res
 
 
 class CheckpointDataset(_WrapperDataset):
@@ -799,7 +806,7 @@ class FIMDataset(_WrapperDataset):
         while True:
             inp = next(dataset)
             len_ = len(inp)
-            i_eos = [0] + [i for i, x in enumerate(inp) if x == self.delimiter] + [len_]
+            i_eos = [0] + [i for i, x in enumerate(inp) if x[0] == self.delimiter] + [len_]
             docs = [
                 inp[i_eos[j] + 1 : i_eos[j + 1]] for j in range(len(i_eos) - 1)
             ]  # list[list[any]]
@@ -813,7 +820,7 @@ class FIMDataset(_WrapperDataset):
                         # Split doc
                         doc = []
                         if self.pref:
-                            doc = [self.pref]
+                            doc = [(self.pref, -1)]
                         splits = torch.randint(
                             0, len(docs[i]), [2], generator=self.generator
                         ).tolist()
@@ -825,20 +832,20 @@ class FIMDataset(_WrapperDataset):
                             # PSM transformation
                             doc += pre
                             if self.suff:
-                                doc.append(self.suff)
+                                doc.append((self.suff, -1))
                             doc += suf
                             if self.midd:
-                                doc.append(self.midd)
+                                doc.append((self.midd, -1))
                             doc += mid
                         else:
                             # SPM transformation
                             if self.suff:
-                                doc.append(self.suff)
+                                doc.append((self.suff, -1))
                             doc += suf
                             if self.midd:
-                                doc.append(self.midd)
+                                doc.append((self.midd, -1))
                             doc += pre + mid
-                out += doc + [self.delimiter]
+                out += doc + [(self.delimiter, -1)]
             yield out[:len_]
 
     def state_dict(self):
@@ -891,7 +898,7 @@ class BufferDataset(_WrapperDataset):
         self.len = seq_len
 
         # Buffer args
-        self.buffer: List[str] = []
+        self.buffer: List = []
         self.bos = bos_token
         self.eos = eos_token
         self.pad = pad_token
@@ -911,17 +918,17 @@ class BufferDataset(_WrapperDataset):
             new = next(iterable)
 
         # Add bos if needed
-        if self.bos is not None and (len(buffer) == 0 or buffer[0] != self.bos):
-            buffer = [self.bos] + buffer
+        if self.bos is not None and (len(buffer) == 0 or buffer[0][0] != self.bos):
+            buffer = [(self.bos, -1)] + buffer
 
         # Handle buffer splitting
         if len(buffer) >= length:
             # If buffer is too long, force split
             out = buffer[:length]
             buffer = buffer[length:]
-            if self.eos is not None and out[-1] != self.eos:
+            if self.eos is not None and out[-1][0] != self.eos:
                 buffer = [out[-1]] + buffer
-                out[-1] = self.eos
+                out[-1] = (self.eos, -1)
             buffer = buffer + new
         else:
             if self.pack_hard:
@@ -929,15 +936,15 @@ class BufferDataset(_WrapperDataset):
                 buffer = buffer + new
                 out = buffer[:length]
                 buffer = buffer[length:]
-                if self.eos is not None and out[-1] != self.eos:
+                if self.eos is not None and out[-1][0] != self.eos:
                     buffer = [out[-1]] + buffer
-                    out[-1] = self.eos
+                    out[-1] = (self.eos, -1)
             else:
                 # Fill out with pads as needed
-                if self.eos is not None and buffer[-1] != self.eos:
-                    buffer.append(self.eos)
+                if self.eos is not None and buffer[-1][0] != self.eos:
+                    buffer.append((self.eos, -1))
                 if self.pad is not None:
-                    out = buffer + [self.pad] * (length - len(buffer))
+                    out = buffer + [(self.pad, -1)] * (length - len(buffer))
                 else:
                     out = buffer
                 buffer = new
@@ -1565,9 +1572,10 @@ class SamplingDataset(_WrapperDataset):
                 # Finish current document
                 out = next(data[self.current_iterator])
                 self.tokens_seen[self.current_iterator] += len(out)
+                dataset_index = self.current_iterator
                 if out[-1] == self.delimiter:
                     self.current_iterator = -1
-                yield out
+                yield [(item, dataset_index) for item in out]
             else:
                 # Choose new subdataset to draw from
                 # (whichever is currently most underrepresented compared to target rate)
