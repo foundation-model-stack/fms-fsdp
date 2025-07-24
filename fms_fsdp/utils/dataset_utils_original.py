@@ -600,37 +600,36 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
         # Guaranteed inconsistent shuffling across workers
         random.seed(self.seed + rank)
 
-
-
-        # # Gather per-file document counts from metadata count file(s)
-        # countfiles = [
-        #     x
-        #     for x in os.listdir(os.path.join(os.path.dirname(datapath), "meta"))
-        #     if "counts" in x and "csv" in x
-        # ]
-        # assert len(countfiles) == 1
-        # doc_counts = {}
+        # Gather per-file document counts from metadata count file(s)
+        countfiles = [
+            x
+            for x in os.listdir(os.path.join(os.path.dirname(datapath), "meta"))
+            if "counts" in x and "csv" in x
+        ]
+        assert len(countfiles) == 1
+        doc_counts = {}
         pathsplit = (datapath, "")
         while len(pathsplit[1]) == 0:
             pathsplit = os.path.split(pathsplit[0])
         pardir, dataset = pathsplit
-        print("Alexei pardir",pardir,"dataset",dataset)
-
         self.dataset = dataset
-        # with open(os.path.join(pardir, "meta", countfiles[0]), "r") as csvfile:
-        #     reader = csv.DictReader(csvfile)
-        #     for row in reader:
-        #         fullpath = row["dataset/filename"]
-        #         prefix = fullpath.rfind("/" + dataset + "/") + 1
-        #         if prefix > 0:
-        #             key = fullpath[prefix:]
-        #             doc_counts[key] = int(row["documents"])
-
+        with open(os.path.join(pardir, "meta", countfiles[0]), "r") as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                fullpath = row["dataset/filename"]
+                prefix = fullpath.find("/" + dataset) + 1
+                if prefix > 0:
+                    key = fullpath[prefix:]
+                    doc_counts[key] = int(row["documents"])
 
         # Assemble document set owned by this worker:
         # listdir, assemble shardfraglist (ind -> shard, frag)
-        shards = [os.path.join(root, name)[len(datapath)+1:] for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True) for name in files if "arrow" in name and os.path.isfile(os.path.join(root, name))]
-        #shards = [ shard for shard in os.listdir(datapath) if os.path.isfile(os.path.join(datapath, shard)) and "arrow" in os.path.join(datapath, shard) ]
+        shards = [
+            shard
+            for shard in os.listdir(datapath)
+            if os.path.isfile(os.path.join(datapath, shard))
+            and "arrow" in os.path.join(datapath, shard)
+        ]
         shards.sort()  # Ensure consistent sharding across machines
         start_frag = (rank * worldsize * len(shards)) // worldsize
         end_frag = ((rank + 1) * worldsize * len(shards)) // worldsize
@@ -638,60 +637,11 @@ class Streaming_Doc_Dataset(_Stateful_Dataset):
             (shards[i // worldsize], i % worldsize) for i in range(start_frag, end_frag)
         ]
 
-
-        # Assemble length of each owned shard file
-
-        countfiles = []
-        if os.path.exists(os.path.join(pardir, "meta")):
-            countfiles = [
-                x
-                for x in os.listdir(os.path.join(pardir, "meta"))
-                if "counts" in x and "csv" in x
-            ]
-        doc_counts = {}
-        if len(countfiles) > 0:
-            # Count file exists, use it
-
-            with open(os.path.join(pardir, "meta", countfiles[0]), "r") as csvfile:
-                reader = csv.DictReader(csvfile)
-                for row in reader:
-                    fullpath = row["dataset/filename"]
-                    prefix = fullpath.rfind("/" + dataset + "/") + 1
-                    if prefix > 0:
-                        key = fullpath[prefix:]
-                        doc_counts[key] = int(row["documents"])
-
-            # countpath = os.path.join(pardir, "meta", countfiles[0])
-            # with open(countpath, "r") as csvfile:
-            #     reader = csv.DictReader(csvfile)
-            #     for row in reader:
-            #         fullpath = row["dataset/filename"]
-            #         prefix = fullpath.find("/" + dataset) + 1
-            #         if prefix > 0:
-            #             key = fullpath[prefix + len(dataset) + 1 :]
-            #             doc_counts[key] = int(row["documents"])
-        else:
-            # Count file does not exist, touch every owned file for length
-            unique_shardfiles = set(shard for shard, frag in shardfrags)
-            doc_counts = {
-                # shard: self.filehandler.length(os.path.join(datapath, shard))
-                os.path.join(dataset, shard): pa.ipc.open_file(pa.memory_map(os.path.join(datapath, shard))).num_record_batches
-                for shard in unique_shardfiles
-            }
-
-            print('*** doc_counts:', doc_counts)
-
-
         # Read shardfrags, assemble doc list for each file shard (aggregating over fragments):
         ndocs = -1
         docset = {}  # shardid -> (min docid, max docid)
         for i, (shard, frag) in enumerate(shardfrags):
-            try:
-                ndocs = doc_counts[os.path.join(dataset, shard)]
-            except Exception as e:
-                if i%500==0:
-                    print("Alexei Exception Looking for (still cont.): ",dataset,shard,str(e))
-                continue
+            ndocs = doc_counts[os.path.join(dataset, shard)]
             self.docs_per_shard[shard] = ndocs
             doc_start = (ndocs * frag) // worldsize
             doc_end = (ndocs * frag + ndocs) // worldsize - 1  # Inclusive upper bound
@@ -948,7 +898,6 @@ class Sampling_Dataset(_Stateful_Dataset):
         self.weights = [1] * len(self.datasets) if weights is None else weights
         self.weights = [w / sum(self.weights) for w in self.weights]
 
-
         self.tokens_seen = [0] * len(self.datasets)
 
         # Build subdataset iterators
@@ -1110,16 +1059,11 @@ class Scalable_Shard_Dataset(_Stateful_Dataset):
             if self.current_reader is not None:
                 ind = self.current_reader
             else:
-                try:
-                    ind = torch.multinomial(
-                        torch.tensor(self.n_docs_remaining, dtype=torch.float),
-                        1,
-                        generator=self.generator,
-                    ).item()
-                except Exception as e:
-                    print("Alexei Exception Looking for (failed): ",self.n_docs_remaining,str(e))
-                    raise
-
+                ind = torch.multinomial(
+                    torch.tensor(self.n_docs_remaining, dtype=torch.float),
+                    1,
+                    generator=self.generator,
+                ).item()
             self.current_reader = ind
             # Read doc
             out = next(data[ind])

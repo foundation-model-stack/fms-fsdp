@@ -30,7 +30,7 @@ def get_latest(targdir, qualifier=lambda x: True):
                 for x in os.listdir(targdir)
                 if qualifier(os.path.join(targdir, x))
             ],
-            key=lambda path: int(path.split("/")[-1].split("_")[1]),
+            key=lambda path: int(path.split("/")[-1].split("_")[-2]),
         )
         return os.path.join(targdir, latest)
     return None

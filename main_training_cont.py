@@ -1,5 +1,9 @@
+"""
+Version to train a loaded-in checkpoint on a new dataset
+"""
+
 import math
-import os
+import os,sys
 
 import fire
 import torch
@@ -24,8 +28,6 @@ from fms_fsdp.utils.train_utils import (
 
 def main(**kwargs):
 
-    print('**** kwargs:', kwargs)
-    
     # get configs
     cfg = config.train_config()
     update_config(cfg, **kwargs)
@@ -39,8 +41,29 @@ def main(**kwargs):
     rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
 
+    print(f"\n** local_rank: {local_rank} == rank: {rank} == world_size: {world_size}") # test later with -n 2 in bsub
+
     if rank == 0:
-        print(f"--> running with these configs {cfg}")
+        print(f"\n--> running with these configs {type(cfg)} {cfg}")
+        '''
+        --> running with these configs train_config(
+        model_variant='llama2mod_starcoder', 
+        ckpt_load_path='/proj/data-eng/fsdp/experiments/R83a/', 
+        ckpt_save_path='/proj/data-eng/fsdp/experiments/R83b/', 
+        use_dummy_dataset=False, 
+        data_path='/proj/data-eng/fsdp/data/R83b', 
+        datasets='CC-MAIN-2024-10,CC-MAIN-2023-40', 
+        weights=(60.0, 40.0), 
+        seq_length=8192, vocab_size=49152, 
+        bos_token=None, eos_token=0, 
+        bol_token=None, eol_token=None, 
+        strip_tokens='', 
+        logical_shards=640, 
+        sharding_strategy='hsdp', 
+        fsdp_activation_checkpointing=False, 
+        selective_checkpointing=1, 
+        mixed_precision=True, low_cpu_fsdp=False, batch_size=2, num_steps=5, learning_rate=0.0006, grad_clip_thresh=1.0, seed=42, use_profiler=False, profiler_rank0_only=True, report_interval=2, checkpoint_interval=3, tracker='aim', tracker_dir='/proj/data-eng/fsdp/data/R83b/aim', tracker_project_name='001', tracker_run_id=None, use_torch_compile=True)
+        '''
 
     # some setups
     setup()
@@ -78,6 +101,7 @@ def main(**kwargs):
         train_loader = get_data_loader(cfg, rank, world_size)
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
+    
     if rank == 0:
         print("Datasets constructed!")
 
@@ -121,6 +145,9 @@ def main(**kwargs):
     checkpointer = Checkpointer(
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
     )
+
+    
+
     model, optimizer, _, start_step, tokens_seen = checkpointer.load(
         model,
         optimizer,
@@ -128,43 +155,17 @@ def main(**kwargs):
         path=os.path.join(cfg.ckpt_load_path, "checkpoints/"),
     )
 
-    # LR schedule
-    # 2025May28 (XH): add WSD scheduler:
-    # warmup_interval = min(2000, cfg.num_steps // 20)
-    # schedule = lambda x: min(
-    #     1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-    #     0.1
-    #     + 0.5
-    #     * (1 - 0.1)
-    #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-    # )
-    if cfg.training_stage == "warmup_stable_decay":
-        '''
-        #== Ref. from SmoLM-135M at https://github.com/huggingface/smollm/blob/main/text/pretraining/smollm2/config_smollm2_135M.yaml
-        '''
-        warmup_steps = 2000 # warm up 2k step and decaying the last 20% step, the rest steps are stable
-        decay_start_step_absolute = int(cfg.num_steps * 0.8) # Decay starts for the last 20% of steps
-        decay_steps_length = cfg.num_steps - decay_start_step_absolute
-        
-        assert decay_start_step_absolute > warmup_steps, f"The decay_start_step_absolute {decay_start_step_absolute:,} cannot be smaller than warmup_step {warmup_steps:,} given  the num_step={num_steps:,}"          
+    print(f"\n==AFTER chkp loading: start_step: {start_step} tokens_seen: {tokens_seen}")
 
-        # x is the current step (0 to num_steps-1):
-        schedule = lambda x: (
-            x / warmup_steps if x < warmup_steps
-            else (
-                1.0 if x < decay_start_step_absolute
-                else max(0.0, 1.0 - (x - decay_start_step_absolute) / decay_steps_length)
-            )
-        )
-    else:
-        warmup_interval = min(2000, cfg.num_steps // 20)
-        schedule = lambda x: min(
-            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-            0.1
-            + 0.5
-            * (1 - 0.1)
-            * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-        )
+    # LR schedule
+    warmup_interval = min(2000, cfg.num_steps // 20)
+    schedule = lambda x: min(
+        1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+        0.1
+        + 0.5
+        * (1 - 0.1)
+        * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+    )
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler
@@ -192,4 +193,8 @@ def main(**kwargs):
 
 
 if __name__ == "__main__":
+    
+    # my_kwargs={'seed': 42, 'model_variant': 'llama2mod_starcoder', 'use_dummy_dataset': False, 'ckpt_load_path': '/proj/data-eng/fsdp/experiments/R83b/', 'ckpt_save_path': '/proj/data-eng/fsdp/experiments/R83b/', 'selective_checkpointing': 1, 'sharding_strategy': 'hsdp', 'low_cpu_fsdp': False, 'report_interval': 100, 'checkpoint_interval': 5000, 'use_torch_compile': True, 'data_path': '/proj/data-eng/fsdp/data/R83b', 'datasets': 'CC-MAIN-2023-14,CC-MAIN-2023-40,CC-MAIN-2024-10', 'weights': (18826844689, 16921110027, 13820668539), 'logical_shards': 640, 'learning_rate': 0.0006, 'seq_length': 8192, 'vocab_size': 49152, 'num_steps': 35000, 'fsdp_activation_checkpointing': False, 'batch_size': 2, 'bos_token': None, 'eos_token': 0, 'tracker': 'aim', 'tracker_dir': '/proj/data-eng/fsdp/data/R83b/aim', 'tracker_project_name': '001', 'tracker_run_id': None, 'use_profiler': False}
+    # main(kwargs=my_kwargs)
+
     fire.Fire(main)

@@ -165,7 +165,8 @@ def train(
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if batch_idx % cfg.checkpoint_interval == 0:
+        # write model to a checkpoint every chkpt_interval or when reaching the num_steps:
+        if (batch_idx % cfg.checkpoint_interval == 0) or (batch_idx==cfg.num_steps):
             checkpointer.save(
                 batch_idx,
                 model,
@@ -178,7 +179,7 @@ def train(
 
 
 def setup():
-    dist.init_process_group("nccl", timeout=timedelta(seconds=60 * 60))
+    dist.init_process_group("nccl", timeout=timedelta(seconds=120 * 60))
 
 
 def setup_environ_flags():
