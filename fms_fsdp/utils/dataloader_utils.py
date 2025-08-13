@@ -26,7 +26,7 @@ def causal_lm(data_seq, prompt_len=1):
     Perform causal language modeling by right-shifting the input sequence.
     Sets first prompt_len tokens to be ignored by the loss.
     """
-    data_seq = torch.tensor(data_seq, dtype=torch.int)
+    data_seq = data_seq.int()
     t = data_seq.clone()[1:]
     data_seq = data_seq[:-1]
     t[:prompt_len] = -100
