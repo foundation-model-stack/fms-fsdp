@@ -65,8 +65,8 @@ def main(**kwargs):
 
     # AC
     if cfg.fsdp_activation_checkpointing:
-        for layer_index, block in enumerate(model.layers):
-            model.layers[layer_index] = checkpoint_wrapper(
+        for layer_index, block in enumerate(model.base_model.layers):
+            model.base_model.layers[layer_index] = checkpoint_wrapper(
                 block, preserve_rng_state=False
             )
 
@@ -80,24 +80,19 @@ def main(**kwargs):
     mp_policy = MixedPrecisionPolicy(
         param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
     )
-    for layer_index, block in enumerate(model.layers):
+    for layer_index, block in enumerate(model.base_model.layers):
         fully_shard(
             block,
             mesh=mesh,
             mp_policy=mp_policy,
-            reshard_after_forward=layer_index < len(model.layers) - 1,
+            reshard_after_forward=layer_index < len(model.base_model.layers) - 1,
         )
     fully_shard(model, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=False)
 
     # init model
     model.to_empty(device="cuda")
     model.reset_parameters()
-
-    # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
-    model.rot_emb.compute_freqs_cis(
-        torch.device("cuda", torch.cuda.current_device()),
-        model.config.max_expected_seq_len,
-    )
+    model.post_init()
 
     # torch compile
     if cfg.use_torch_compile:
